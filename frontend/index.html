@@ -133,6 +133,10 @@
     .mercado-aprobado, .mercado-rechazado { margin-top: 10px; padding: 14px; border-radius: 9px; line-height: 1.6; }
     .mercado-aprobado { color: #126b32; background: #e8f6ed; }
     .mercado-rechazado { color: #646b78; background: #f0f1f3; }
+    .indicador-resultado { margin-top: 10px; padding: 10px 12px; border: 1px solid rgb(23 32 51 / 10%); border-radius: 8px; background: #fff; font-weight: 700; }
+    .resultado-ganado { color: #126b32; }
+    .resultado-perdido { color: #aa2020; }
+    .resultado-pendiente { color: #586174; }
     .pasos-hoy { margin: 10px 0 0; padding-left: 24px; color: #24402f; line-height: 1.6; }
     .resumen-partido-hoy { margin: 14px 2px 0; font-weight: 700; }
     #aviso_lista_hoy { color: #586174; }
@@ -253,6 +257,11 @@
   </main>
 
   <script>
+    const API_BASE_URL =
+      ["localhost", "127.0.0.1"].includes(window.location.hostname) && window.location.port === "5500"
+        ? "http://localhost:8000"
+        : "";
+    const apiUrl = (ruta) => `${API_BASE_URL}${ruta}`;
     const formulario = document.querySelector("#formulario");
     const boton = document.querySelector("#boton");
     const resultado = document.querySelector("#resultado");
@@ -261,10 +270,10 @@
     const botonCompleto = formularioCompleto.querySelector("button[type='submit']");
     const listaApuestasHoy = document.querySelector("#lista_apuestas_hoy");
     const mercadosCompletos = [
-      { nombre: "Córners", opcion: "Más de 9.5 córners", endpoint: "corners", campos: ["promedio_local", "promedio_visitante", "cuota_over_9_5"] },
-      { nombre: "Goles", opcion: "Más de 2.5 goles", endpoint: "goles", campos: ["promedio_local_goles", "promedio_visitante_goles", "cuota_over_2_5"] },
-      { nombre: "Tarjetas", opcion: "Más de 4.5 tarjetas", endpoint: "tarjetas", campos: ["promedio_local_tarjetas", "promedio_visitante_tarjetas", "cuota_over_4_5"] },
-      { nombre: "Tiros a Puerta", opcion: "Más de 8.5 tiros a puerta", endpoint: "tiros", campos: ["promedio_local_tiros", "promedio_visitante_tiros", "cuota_over_8_5"] },
+      { nombre: "Córners", opcion: "Más de 9.5 córners", endpoint: "corners", campos: ["promedio_local", "promedio_visitante", "cuota_over_9_5"], resultado: "corners_total", linea: 9.5, unidad: "córners" },
+      { nombre: "Goles", opcion: "Más de 2.5 goles", endpoint: "goles", campos: ["promedio_local_goles", "promedio_visitante_goles", "cuota_over_2_5"], resultado: "goles_total", linea: 2.5, unidad: "goles" },
+      { nombre: "Tarjetas", opcion: "Más de 4.5 tarjetas", endpoint: "tarjetas", campos: ["promedio_local_tarjetas", "promedio_visitante_tarjetas", "cuota_over_4_5"], resultado: "tarjetas_total", linea: 4.5, unidad: "tarjetas" },
+      { nombre: "Tiros a Puerta", opcion: "Más de 8.5 tiros a puerta", endpoint: "tiros", campos: ["promedio_local_tiros", "promedio_visitante_tiros", "cuota_over_8_5"], resultado: "tiros_a_puerta_total", linea: 8.5, unidad: "tiros a puerta" },
     ];
     const entradas = [
       document.querySelector("#promedio_local"),
@@ -305,6 +314,35 @@
     function escaparHtml(texto) {
       const caracteres = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
       return String(texto).replace(/[&<>"']/g, (caracter) => caracteres[caracter]);
+    }
+
+    function crearIndicadorResultado(partido, mercado, analisis, kelly) {
+      const indicador = document.createElement("div");
+      indicador.className = "indicador-resultado resultado-pendiente";
+      const resultado = partido.resultado_real;
+      if (!resultado || !resultado.estado) {
+        indicador.textContent = "⏳ PENDIENTE";
+        return indicador;
+      }
+      if (resultado.estado === "en_juego") {
+        indicador.textContent = "⏳ EN JUEGO";
+        return indicador;
+      }
+      const total = resultado[mercado.resultado];
+      if (resultado.estado !== "finalizado" || total === null || total === undefined) {
+        indicador.textContent = "⏳ PENDIENTE";
+        return indicador;
+      }
+      const ganada = Number(total) > mercado.linea;
+      if (ganada) {
+        const ganancia = kelly.stake_recomendado * (analisis.cuota - 1);
+        indicador.className = "indicador-resultado resultado-ganado";
+        indicador.textContent = `✅ GANADA - Resultado: ${total} ${mercado.unidad} - Línea: ${mercado.opcion} - +$${ganancia.toFixed(2)} ganados`;
+      } else {
+        indicador.className = "indicador-resultado resultado-perdido";
+        indicador.textContent = `❌ PERDIDA - Resultado: ${total} ${mercado.unidad} - Línea: ${mercado.opcion} - -$${kelly.stake_recomendado.toFixed(2)} perdidos`;
+      }
+      return indicador;
     }
 
     let mercadoActivo = "corners";
@@ -353,44 +391,50 @@
       listaApuestasHoy.replaceChildren();
 
       try {
-        const respuestaPartidos = await fetch("/partidos-hoy");
+        const respuestaPartidos = await fetch(apiUrl("/partidos-hoy"));
         const datosHoy = await respuestaPartidos.json();
         if (!respuestaPartidos.ok) {
           throw new Error(datosHoy.detail || "No se pudo cargar la lista de partidos.");
         }
 
         const partidos = (datosHoy.partidos || []).filter((partido) => partido.estado !== "cancelado");
+        if (partidos.length === 0) {
+          const aviso = document.createElement("li");
+          aviso.textContent = "No hay partidos disponibles hoy.";
+          listaApuestasHoy.appendChild(aviso);
+          return;
+        }
         const partidosAnalizados = [];
         for (const partido of partidos) {
           const resultados = await Promise.all(mercadosCompletos.map(async (mercado) => {
             const datosMercado = partido.mercados && partido.mercados[mercado.endpoint];
             if (!datosMercado) return { mercado, sinDatos: true };
 
-            const respuestaAnalisis = await fetch(`/analizar-${mercado.endpoint}`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(datosMercado),
-            });
-            const analisis = await respuestaAnalisis.json();
-            if (!respuestaAnalisis.ok) {
-              throw new Error(`${partido.local} vs ${partido.visitante}, ${mercado.nombre}: ${analisis.detail || "error de análisis."}`);
-            }
+            try {
+              const respuestaAnalisis = await fetch(apiUrl(`/analizar-${mercado.endpoint}`), {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(datosMercado),
+              });
+              const analisis = await respuestaAnalisis.json();
+              if (!respuestaAnalisis.ok) return { mercado, sinDatos: true };
 
-            const respuestaKelly = await fetch("/calcular-kelly", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                probabilidad: analisis.probabilidad,
-                cuota: analisis.cuota,
-                banco: partido.banco,
-                recomendacion: analisis.recomendacion,
-              }),
-            });
-            const kelly = await respuestaKelly.json();
-            if (!respuestaKelly.ok) {
-              throw new Error(`${partido.local} vs ${partido.visitante}, ${mercado.nombre}: ${kelly.detail || "error de Kelly."}`);
+              const respuestaKelly = await fetch(apiUrl("/calcular-kelly"), {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  probabilidad: analisis.probabilidad,
+                  cuota: analisis.cuota,
+                  banco: partido.banco,
+                  recomendacion: analisis.recomendacion,
+                }),
+              });
+              const kelly = await respuestaKelly.json();
+              if (!respuestaKelly.ok) return { mercado, sinDatos: true };
+              return { mercado, analisis, kelly };
+            } catch (_) {
+              return { mercado, sinDatos: true };
             }
-            return { mercado, analisis, kelly };
           }));
           partidosAnalizados.push({ partido, resultados });
         }
@@ -459,6 +503,7 @@
               guia.className = "como-apostar";
               guia.append(tituloComoApostar, listaPasos);
               resultadoMercado.appendChild(guia);
+              resultadoMercado.appendChild(crearIndicadorResultado(partido, mercado, analisis, kelly));
             }
             detalle.appendChild(resultadoMercado);
           });
@@ -524,7 +569,7 @@
           const payload = Object.fromEntries(
             mercado.campos.map((campo) => [campo, Number(datos[campo])])
           );
-          const respuestaAnalisis = await fetch(`/analizar-${mercado.endpoint}`, {
+          const respuestaAnalisis = await fetch(apiUrl(`/analizar-${mercado.endpoint}`), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
@@ -534,7 +579,7 @@
             throw new Error(`${mercado.nombre}: ${analisis.detail || "falló el análisis."}`);
           }
 
-          const respuestaKelly = await fetch("/calcular-kelly", {
+          const respuestaKelly = await fetch(apiUrl("/calcular-kelly"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -614,7 +659,7 @@
       delete datos.banco;
 
       try {
-        const respuesta = await fetch(`/analizar-${mercados[mercadoActivo].endpoint}`, {
+        const respuesta = await fetch(apiUrl(`/analizar-${mercados[mercadoActivo].endpoint}`), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(datos),
@@ -624,7 +669,7 @@
           throw new Error(analisis.detail || "No se pudo completar el análisis.");
         }
 
-        const respuestaKelly = await fetch("/calcular-kelly", {
+        const respuestaKelly = await fetch(apiUrl("/calcular-kelly"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
