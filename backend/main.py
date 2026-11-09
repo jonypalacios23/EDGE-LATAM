@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from api_football import buscar_resultado_partido, obtener_resultados_partidos_hoy
+from api_espn import buscar_resultado_partido, obtener_resultados_partidos_hoy
 from corners import analizar_corners
 from goles import analizar_goles
 from kelly import calcular_kelly
@@ -22,6 +22,53 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def liquidar_pronostico(resultado: Optional[Dict[str, object]], pronostico: str) -> Dict[str, object]:
+    """Liquida el pronóstico 1X2 guardado cuando ESPN confirma el estado final."""
+    pronostico_normalizado = str(pronostico or "").strip().casefold()
+    if resultado is None:
+        return {"estado": "PENDIENTE", "pronostico": pronostico_normalizado}
+
+    estado = str(resultado.get("estado", "")).casefold()
+    if estado in {"suspendido", "cancelado"}:
+        return {
+            "estado": "ANULADO / REEMBOLSO",
+            "pronostico": pronostico_normalizado,
+            "marcador_local": resultado.get("marcador_local"),
+            "marcador_visitante": resultado.get("marcador_visitante"),
+        }
+    if estado != "finalizado":
+        return {
+            "estado": "PENDIENTE",
+            "pronostico": pronostico_normalizado,
+            "marcador_local": resultado.get("marcador_local"),
+            "marcador_visitante": resultado.get("marcador_visitante"),
+        }
+
+    if pronostico_normalizado not in {"local", "empate", "visitante"}:
+        return {"estado": "PRONÓSTICO NO CONFIGURADO", "pronostico": pronostico_normalizado}
+
+    goles_local = resultado.get("marcador_local")
+    goles_visitante = resultado.get("marcador_visitante")
+    if goles_local is None or goles_visitante is None:
+        return {"estado": "RESULTADO NO DISPONIBLE", "pronostico": pronostico_normalizado}
+    goles_local = int(goles_local)
+    goles_visitante = int(goles_visitante)
+    if goles_local > goles_visitante:
+        resultado_real = "local"
+    elif goles_local < goles_visitante:
+        resultado_real = "visitante"
+    else:
+        resultado_real = "empate"
+    estado_liquidacion = "GANADO" if pronostico_normalizado == resultado_real else "PERDIDO"
+    return {
+        "estado": estado_liquidacion,
+        "pronostico": pronostico_normalizado,
+        "resultado_real": resultado_real,
+        "marcador_local": goles_local,
+        "marcador_visitante": goles_visitante,
+    }
 
 
 @app.get("/api/partidos")
@@ -44,17 +91,18 @@ def obtener_partidos_hoy(
                     and str(partido.get("visitante", "")).casefold() == visitante.casefold()
                 ]
             pares_equipos = [
-                (str(partido.get("local", "")), str(partido.get("visitante", "")))
+                (
+                    str(partido.get("local", "")),
+                    str(partido.get("visitante", "")),
+                    str(partido.get("liga", "")) or None,
+                )
                 for partido in datos["partidos"]
                 if isinstance(partido, dict)
             ]
             error_api = False
             try:
                 resultados_api = obtener_resultados_partidos_hoy(pares_equipos)
-                error_api = any(
-                    bool(resultado.get("error_estadisticas"))
-                    for resultado in resultados_api
-                )
+                error_api = False
             except Exception as error:
                 print("Error API:", error)
                 resultados_api = []
@@ -68,13 +116,17 @@ def obtener_partidos_hoy(
                     )
                     if resultados_api and resultado_real is None:
                         print(
-                            "API-Football: sin coincidencia para {} vs {}".format(
+                            "ESPN: sin coincidencia para {} vs {}".format(
                                 partido.get("local", ""),
                                 partido.get("visitante", ""),
                             )
                         )
                     partido["resultado_real"] = resultado_real
                     partido["datos_en_vivo"] = resultado_real is not None
+                    partido["liquidacion"] = liquidar_pronostico(
+                        resultado_real,
+                        str(partido.get("pronostico_resultado", "")),
+                    )
             datos["error_api"] = error_api
             datos["tiene_datos_en_vivo"] = any(
                 isinstance(partido, dict) and partido.get("datos_en_vivo")

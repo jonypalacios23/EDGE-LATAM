@@ -1,1 +1,1 @@
-Para cambiar un partido, abre partidos_hoy.json, cambia Local, Visitante, promedios y cuotas, guarda, y en 5 minutos la Lista se actualiza sola. No toques nada más.
+Para cambiar un partido, abre backend/partidos_hoy.json, cambia Local, Visitante, liga, pronostico_resultado, promedios y cuotas, guarda, y en 45 minutos la Lista se actualiza sola. Para pronostico_resultado escribe local, empate o visitante. No toques nada más.

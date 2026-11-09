@@ -4,6 +4,8 @@
       "fecha": "2026-11-08",
       "local": "Deportes Tolima",
       "visitante": "Millonarios",
+      "liga": "col.1",
+      "pronostico_resultado": "local",
       "estado": "activo",
       "banco": 100,
       "mercados": {
@@ -37,6 +39,8 @@
       "fecha": "2026-11-08",
       "local": "Alianza Valledupar",
       "visitante": "Llaneros",
+      "liga": "col.2",
+      "pronostico_resultado": "local",
       "estado": "activo",
       "banco": 100,
       "mercados": {
@@ -71,6 +75,8 @@
     "fecha": "YYYY-MM-DD",
     "local": "Equipo local",
     "visitante": "Equipo visitante",
+    "liga": "col.1",
+    "pronostico_resultado": "local | empate | visitante",
     "estado": "activo",
     "banco": 100,
     "mercados": {

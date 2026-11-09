@@ -143,8 +143,12 @@
     .resumen-en-vivo { margin: 10px 0 14px; padding: 12px; border: 1px solid #d9dfe9; border-radius: 9px; background: #f8f9fc; }
     .estado-partido-vivo { margin-bottom: 7px; font-weight: 800; }
     .marcador-partido-vivo { margin-bottom: 8px; font-size: 1.1rem; font-weight: 750; }
-    .conteo-en-vivo { margin-top: 8px; font-size: .9rem; }
     .boton-actualizar-partido { margin-top: 10px; padding: 8px 10px; font-size: .9rem; }
+    .liquidacion-partido { margin-top: 8px; font-weight: 800; }
+    .liquidacion-ganado { color: #16803c; }
+    .liquidacion-perdido { color: #bd2635; }
+    .liquidacion-anulado { color: #586174; }
+    .liquidacion-pendiente { color: #586174; }
     .pasos-hoy { margin: 10px 0 0; padding-left: 24px; color: #24402f; line-height: 1.6; }
     .resumen-partido-hoy { margin: 14px 2px 0; font-weight: 700; }
     #aviso_lista_hoy { color: #586174; }
@@ -284,6 +288,17 @@
       { nombre: "Tarjetas", opcion: "Más de 4.5 tarjetas", endpoint: "tarjetas", campos: ["promedio_local_tarjetas", "promedio_visitante_tarjetas", "cuota_over_4_5"], resultado: "tarjetas_total", linea: 4.5, unidad: "tarjetas" },
       { nombre: "Tiros a Puerta", opcion: "Más de 8.5 tiros a puerta", endpoint: "tiros", campos: ["promedio_local_tiros", "promedio_visitante_tiros", "cuota_over_8_5"], resultado: "tiros_a_puerta_total", linea: 8.5, unidad: "tiros a puerta" },
     ];
+    const nombresLigas = {
+      "col.1": "Colombia Primera A",
+      "col.2": "Colombia Primera B",
+      "conmebol.libertadores": "CONMEBOL Libertadores",
+      "conmebol.sudamericana": "CONMEBOL Sudamericana",
+      "eng.1": "Premier League",
+      "esp.1": "LaLiga",
+      "ita.1": "Serie A",
+      "ger.1": "Bundesliga",
+      "fra.1": "Ligue 1",
+    };
     const entradas = [
       document.querySelector("#promedio_local"),
       document.querySelector("#promedio_visitante"),
@@ -342,34 +357,15 @@
       console.info(`Lista de Hoy consultada a las ${hora}; ${sinDatos ? "sin datos en vivo" : "datos en vivo disponibles"}.`);
     }
 
-    function agregarBarraConteo(contenedor, nombre, total, linea, unidad) {
-      const fila = document.createElement("div");
-      fila.className = "conteo-en-vivo";
-      fila.textContent = `${nombre}: ${total === null || total === undefined ? "--" : total} / ${linea} ${unidad}`;
-      const barra = document.createElement("div");
-      barra.className = "barra-progreso";
-      barra.setAttribute("role", "progressbar");
-      barra.setAttribute("aria-label", `${nombre} frente a la línea ${linea}`);
-      barra.setAttribute("aria-valuemin", "0");
-      barra.setAttribute("aria-valuemax", String(linea));
-      if (total !== null && total !== undefined) barra.setAttribute("aria-valuenow", String(total));
-      const avance = document.createElement("span");
-      const porcentaje = total === null || total === undefined
-        ? 0
-        : Math.min(100, Math.max(0, Number(total) / linea * 100));
-      avance.style.width = `${porcentaje}%`;
-      barra.appendChild(avance);
-      fila.appendChild(barra);
-      contenedor.appendChild(fila);
-    }
-
     function crearResumenEnVivo(partido) {
       const panel = document.createElement("section");
       panel.className = "resumen-en-vivo";
       const resultado = partido.resultado_real;
       let etiquetaEstado = "Sin datos en vivo";
       if (partido.datos_en_vivo && resultado) {
-        if (resultado.estado === "finalizado") {
+        if (resultado.estado_texto) {
+          etiquetaEstado = resultado.estado_texto;
+        } else if (resultado.estado === "finalizado") {
           etiquetaEstado = "Finalizado";
         } else if (resultado.estado_corto === "HT") {
           etiquetaEstado = "Descanso";
@@ -388,6 +384,11 @@
       estado.textContent = etiquetaEstado;
       panel.appendChild(estado);
 
+      const liga = document.createElement("div");
+      liga.className = "liga-partido-vivo";
+      liga.textContent = `Liga: ${resultado && resultado.liga ? resultado.liga : (nombresLigas[partido.liga] || partido.liga || "Sin dato")}`;
+      panel.appendChild(liga);
+
       const marcador = document.createElement("div");
       marcador.className = "marcador-partido-vivo";
       const golesLocal = resultado && resultado.marcador_local !== null ? resultado.marcador_local : "--";
@@ -395,8 +396,18 @@
       marcador.textContent = `Marcador: ${golesLocal} - ${golesVisitante}`;
       panel.appendChild(marcador);
 
-      agregarBarraConteo(panel, "Tarjetas", resultado && resultado.tarjetas_total, 4.5, "tarjetas");
-      agregarBarraConteo(panel, "Córners", resultado && resultado.corners_total, 9.5, "córners");
+      const liquidacion = partido.liquidacion || { estado: "PENDIENTE" };
+      const resultadoPronostico = document.createElement("div");
+      const clasesLiquidacion = {
+        GANADO: "liquidacion-ganado",
+        PERDIDO: "liquidacion-perdido",
+        "ANULADO / REEMBOLSO": "liquidacion-anulado",
+      };
+      resultadoPronostico.className = `liquidacion-partido ${clasesLiquidacion[liquidacion.estado] || "liquidacion-pendiente"}`;
+      const nombresPronostico = { local: partido.local, empate: "Empate", visitante: partido.visitante };
+      const prediccion = nombresPronostico[liquidacion.pronostico] || "Sin pronóstico";
+      resultadoPronostico.textContent = `${liquidacion.estado} · Pronóstico: ${prediccion}`;
+      panel.appendChild(resultadoPronostico);
 
       const boton = document.createElement("button");
       boton.type = "button";
@@ -498,9 +509,11 @@
         if (actualizado) {
           partido.resultado_real = actualizado.resultado_real;
           partido.datos_en_vivo = actualizado.datos_en_vivo;
+          partido.liquidacion = actualizado.liquidacion;
         } else {
           partido.resultado_real = null;
           partido.datos_en_vivo = false;
+          partido.liquidacion = { estado: "PENDIENTE", pronostico: partido.pronostico_resultado };
         }
         resultados.forEach(({ mercado, analisis, kelly, sinDatos }) => {
           if (sinDatos || !analisis || analisis.recomendacion === "NO HAY VALOR") return;
