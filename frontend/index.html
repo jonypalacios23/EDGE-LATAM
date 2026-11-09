@@ -1,0 +1,664 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Analizador de córners</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #172033;
+      background: #f3f5f9;
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      box-sizing: border-box;
+    }
+
+    main {
+      width: min(100%, 680px);
+      padding: 32px;
+      border-radius: 16px;
+      background: #fff;
+      box-shadow: 0 12px 36px rgb(23 32 51 / 10%);
+    }
+
+    h1 { margin: 0 0 8px; font-size: 1.6rem; }
+    p { color: #586174; }
+
+    .pestanas {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 0 0 24px;
+      padding: 4px;
+      border-radius: 10px;
+      background: #f0f2f7;
+    }
+
+    .pestana {
+      flex: 1 1 108px;
+      min-width: 0;
+      margin: 0;
+      padding: 9px 6px;
+      background: transparent;
+      color: #586174;
+    }
+
+    .pestana.activa { background: #244bd7; color: white; }
+
+    label {
+      display: block;
+      margin-top: 18px;
+      font-weight: 600;
+    }
+
+    input {
+      display: block;
+      width: 100%;
+      box-sizing: border-box;
+      margin-top: 7px;
+      padding: 11px 12px;
+      border: 1px solid #cbd1dc;
+      border-radius: 8px;
+      font: inherit;
+    }
+
+    button {
+      width: 100%;
+      margin-top: 24px;
+      padding: 12px;
+      border: 0;
+      border-radius: 8px;
+      background: #244bd7;
+      color: white;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button:disabled { opacity: .65; cursor: wait; }
+    #resultado { margin-top: 24px; }
+    #resultado[hidden] { display: none; }
+    .metricas { line-height: 1.8; }
+    .recomendacion { margin: 12px 0 0; font-size: 1.8rem; font-weight: 800; }
+    .sin-valor { color: #c62828; }
+    .con-valor { color: #16803c; font-size: 2.5rem; }
+    .error { color: #c62828; }
+    .mercados-completos {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 12px;
+      margin-top: 20px;
+    }
+    .mercado-completo {
+      padding: 16px;
+      border: 1px solid #e0e4ec;
+      border-radius: 10px;
+    }
+    .mercado-completo h2 { margin: 0 0 10px; font-size: 1.05rem; }
+    .mercado-completo label { margin-top: 10px; }
+    .mercado-completo input { padding: 9px 10px; }
+    .boton-completo { min-height: 54px; font-size: 1.08rem; }
+    #resultado_completo { margin-top: 24px; }
+    #resultado_completo[hidden] { display: none; }
+    .fila-resultado {
+      margin-top: 10px;
+      padding: 14px 16px;
+      border-radius: 10px;
+      line-height: 1.65;
+    }
+    .fila-apuesta { color: #126b32; background: #e8f6ed; }
+    .fila-no-apuesta { color: #aa2020; background: #fff0f0; }
+    .resumen-completo { margin-top: 20px; font-size: 1.2rem; font-weight: 800; }
+    .como-apostar {
+      margin-top: 14px;
+      padding: 12px;
+      border-radius: 8px;
+      color: #24402f;
+      background: rgb(255 255 255 / 75%);
+    }
+    .como-apostar ol { margin: 8px 0 0; padding-left: 22px; }
+    .nota-cuotas { margin: 18px auto 0; color: #747d8e; font-size: .75rem; text-align: center; }
+    #lista_apuestas_hoy { padding-left: 0; list-style: none; }
+    .partido-hoy { margin-top: 12px; border: 1px solid #d9dfe9; border-radius: 10px; background: #fff; overflow: hidden; }
+    .partido-hoy summary { padding: 16px; font-weight: 750; cursor: pointer; }
+    .detalle-partido { padding: 0 14px 14px; }
+    .mercado-aprobado, .mercado-rechazado { margin-top: 10px; padding: 14px; border-radius: 9px; line-height: 1.6; }
+    .mercado-aprobado { color: #126b32; background: #e8f6ed; }
+    .mercado-rechazado { color: #646b78; background: #f0f1f3; }
+    .pasos-hoy { margin: 10px 0 0; padding-left: 24px; color: #24402f; line-height: 1.6; }
+    .resumen-partido-hoy { margin: 14px 2px 0; font-weight: 700; }
+    #aviso_lista_hoy { color: #586174; }
+
+    @media (max-width: 600px) {
+      body { place-items: start center; padding: 12px; }
+      main { width: 100%; padding: 18px; border-radius: 12px; }
+      h1 { font-size: 1.4rem; }
+      .pestanas { gap: 5px; margin-bottom: 18px; }
+      .pestana { flex: 1 1 calc(50% - 5px); padding: 11px 7px; }
+      input { font-size: 16px; }
+      .mercados-completos { grid-template-columns: 1fr; }
+      .partido-hoy summary { padding: 14px 12px; }
+      .detalle-partido { padding: 0 10px 10px; }
+      .mercado-aprobado, .mercado-rechazado { padding: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <nav class="pestanas" aria-label="Tipo de análisis">
+      <button class="pestana activa" type="button" data-vista="hoy" aria-selected="true">Lista de Hoy</button>
+      <button class="pestana" type="button" data-vista="completo" aria-selected="false">Partido Completo</button>
+      <button class="pestana" type="button" data-vista="individual" data-mercado="corners" aria-selected="false">Córners</button>
+      <button class="pestana" type="button" data-vista="individual" data-mercado="goles" aria-selected="false">Goles</button>
+      <button class="pestana" type="button" data-vista="individual" data-mercado="tarjetas" aria-selected="false">Tarjetas</button>
+      <button class="pestana" type="button" data-vista="individual" data-mercado="tiros" aria-selected="false">Tiros a Puerta</button>
+    </nav>
+
+    <section id="vista_hoy">
+      <h1>Lista de Hoy</h1>
+      <ul id="lista_apuestas_hoy" aria-live="polite"></ul>
+    </section>
+
+    <section id="vista_completa" hidden>
+      <h1>Partido Completo</h1>
+      <p>Ingresa los datos una vez para comparar los cuatro mercados y calcular Kelly. La cuota la consultas e ingresas manualmente desde tu casa de apuestas de preferencia.</p>
+
+      <form id="formulario_completo">
+        <div class="mercados-completos">
+          <section class="mercado-completo">
+            <h2>Equipos y banco</h2>
+            <label for="equipo_local">Local</label>
+            <input id="equipo_local" name="equipo_local" type="text" required>
+            <label for="equipo_visitante">Visitante</label>
+            <input id="equipo_visitante" name="equipo_visitante" type="text" required>
+            <label for="banco_completo">Banco</label>
+            <input id="banco_completo" name="banco" type="number" min="0" step="any" required>
+          </section>
+
+          <section class="mercado-completo">
+            <h2>Córners · Over 9.5</h2>
+            <label for="corners_local">Promedio local</label>
+            <input id="corners_local" name="promedio_local" type="number" min="0" step="any" required>
+            <label for="corners_visitante">Promedio visitante</label>
+            <input id="corners_visitante" name="promedio_visitante" type="number" min="0" step="any" required>
+            <label for="corners_cuota">Cuota</label>
+            <input id="corners_cuota" name="cuota_over_9_5" type="number" min="1.01" step="any" required>
+          </section>
+
+          <section class="mercado-completo">
+            <h2>Goles · Over 2.5</h2>
+            <label for="goles_local">Promedio local</label>
+            <input id="goles_local" name="promedio_local_goles" type="number" min="0" step="any" required>
+            <label for="goles_visitante">Promedio visitante</label>
+            <input id="goles_visitante" name="promedio_visitante_goles" type="number" min="0" step="any" required>
+            <label for="goles_cuota">Cuota</label>
+            <input id="goles_cuota" name="cuota_over_2_5" type="number" min="1.01" step="any" required>
+          </section>
+
+          <section class="mercado-completo">
+            <h2>Tarjetas · Over 4.5</h2>
+            <label for="tarjetas_local">Promedio local</label>
+            <input id="tarjetas_local" name="promedio_local_tarjetas" type="number" min="0" step="any" required>
+            <label for="tarjetas_visitante">Promedio visitante</label>
+            <input id="tarjetas_visitante" name="promedio_visitante_tarjetas" type="number" min="0" step="any" required>
+            <label for="tarjetas_cuota">Cuota</label>
+            <input id="tarjetas_cuota" name="cuota_over_4_5" type="number" min="1.01" step="any" required>
+          </section>
+
+          <section class="mercado-completo">
+            <h2>Tiros a Puerta · Over 8.5</h2>
+            <label for="tiros_local">Promedio local</label>
+            <input id="tiros_local" name="promedio_local_tiros" type="number" min="0" step="any" required>
+            <label for="tiros_visitante">Promedio visitante</label>
+            <input id="tiros_visitante" name="promedio_visitante_tiros" type="number" min="0" step="any" required>
+            <label for="tiros_cuota">Cuota</label>
+            <input id="tiros_cuota" name="cuota_over_8_5" type="number" min="1.01" step="any" required>
+          </section>
+        </div>
+        <button class="boton-completo" type="submit">Analizar Partido Completo</button>
+      </form>
+      <section id="resultado_completo" aria-live="polite" hidden></section>
+    </section>
+
+    <section id="vista_individual" hidden>
+      <h1 id="titulo">Analizador de córners</h1>
+      <p id="descripcion">Evalúa el valor estimado para Over 9.5 córners.</p>
+
+      <form id="formulario">
+        <label id="etiqueta_local" for="promedio_local">Promedio local</label>
+        <input id="promedio_local" name="promedio_local" type="number" min="0" step="any" required>
+
+        <label id="etiqueta_visitante" for="promedio_visitante">Promedio visitante</label>
+        <input id="promedio_visitante" name="promedio_visitante" type="number" min="0" step="any" required>
+
+        <label id="etiqueta_cuota" for="cuota_over_9_5">Cuota Over 9.5</label>
+        <input id="cuota_over_9_5" name="cuota_over_9_5" type="number" min="1.01" step="any" required>
+
+        <label for="banco">Banco</label>
+        <input id="banco" name="banco" type="number" min="0" step="any" value="100" required>
+
+        <button id="boton" type="submit">Analizar</button>
+      </form>
+
+      <section id="resultado" aria-live="polite" hidden></section>
+    </section>
+  </main>
+
+  <script>
+    const formulario = document.querySelector("#formulario");
+    const boton = document.querySelector("#boton");
+    const resultado = document.querySelector("#resultado");
+    const formularioCompleto = document.querySelector("#formulario_completo");
+    const resultadoCompleto = document.querySelector("#resultado_completo");
+    const botonCompleto = formularioCompleto.querySelector("button[type='submit']");
+    const listaApuestasHoy = document.querySelector("#lista_apuestas_hoy");
+    const mercadosCompletos = [
+      { nombre: "Córners", opcion: "Más de 9.5 córners", endpoint: "corners", campos: ["promedio_local", "promedio_visitante", "cuota_over_9_5"] },
+      { nombre: "Goles", opcion: "Más de 2.5 goles", endpoint: "goles", campos: ["promedio_local_goles", "promedio_visitante_goles", "cuota_over_2_5"] },
+      { nombre: "Tarjetas", opcion: "Más de 4.5 tarjetas", endpoint: "tarjetas", campos: ["promedio_local_tarjetas", "promedio_visitante_tarjetas", "cuota_over_4_5"] },
+      { nombre: "Tiros a Puerta", opcion: "Más de 8.5 tiros a puerta", endpoint: "tiros", campos: ["promedio_local_tiros", "promedio_visitante_tiros", "cuota_over_8_5"] },
+    ];
+    const entradas = [
+      document.querySelector("#promedio_local"),
+      document.querySelector("#promedio_visitante"),
+      document.querySelector("#cuota_over_9_5"),
+    ];
+    const mercados = {
+      corners: {
+        titulo: "Analizador de córners",
+        descripcion: "Evalúa el valor estimado para Over 9.5 córners.",
+        campos: ["promedio_local", "promedio_visitante", "cuota_over_9_5"],
+        etiquetas: ["Promedio local", "Promedio visitante", "Cuota Over 9.5"],
+        endpoint: "corners",
+      },
+      goles: {
+        titulo: "Analizador de goles",
+        descripcion: "Evalúa el valor estimado para Over 2.5 goles.",
+        campos: ["promedio_local_goles", "promedio_visitante_goles", "cuota_over_2_5"],
+        etiquetas: ["Promedio local de goles", "Promedio visitante de goles", "Cuota Over 2.5"],
+        endpoint: "goles",
+      },
+      tarjetas: {
+        titulo: "Analizador de tarjetas",
+        descripcion: "Evalúa el valor estimado para Over 4.5 tarjetas.",
+        campos: ["promedio_local_tarjetas", "promedio_visitante_tarjetas", "cuota_over_4_5"],
+        etiquetas: ["Promedio local de tarjetas", "Promedio visitante de tarjetas", "Cuota Over 4.5"],
+        endpoint: "tarjetas",
+      },
+      tiros: {
+        titulo: "Analizador de tiros a puerta",
+        descripcion: "Evalúa Over 8.5 tiros a puerta y calcula el stake Kelly.",
+        campos: ["promedio_local_tiros", "promedio_visitante_tiros", "cuota_over_8_5"],
+        etiquetas: ["Promedio local de tiros a puerta", "Promedio visitante de tiros a puerta", "Cuota Over 8.5"],
+        endpoint: "tiros",
+      },
+    };
+
+    function escaparHtml(texto) {
+      const caracteres = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+      return String(texto).replace(/[&<>"']/g, (caracter) => caracteres[caracter]);
+    }
+
+    let mercadoActivo = "corners";
+    const valoresPorMercado = Object.fromEntries(
+      Object.entries(mercados).map(([clave, mercado]) => [
+        clave,
+        Object.fromEntries(mercado.campos.map((campo) => [campo, ""])),
+      ])
+    );
+
+    function guardarValoresMercado(clave) {
+      mercados[clave].campos.forEach((campo, indice) => {
+        valoresPorMercado[clave][campo] = entradas[indice].value;
+      });
+    }
+
+    entradas.forEach((entrada) => {
+      entrada.addEventListener("input", () => guardarValoresMercado(mercadoActivo));
+    });
+
+    function seleccionarMercado(clave) {
+      guardarValoresMercado(mercadoActivo);
+      mercadoActivo = clave;
+      document.querySelector("#vista_hoy").hidden = true;
+      document.querySelector("#vista_completa").hidden = true;
+      document.querySelector("#vista_individual").hidden = false;
+      const mercado = mercados[clave];
+      document.querySelector("#titulo").textContent = mercado.titulo;
+      document.querySelector("#descripcion").textContent = mercado.descripcion;
+      ["#etiqueta_local", "#etiqueta_visitante", "#etiqueta_cuota"].forEach((selector, indice) => {
+        document.querySelector(selector).textContent = mercado.etiquetas[indice];
+        entradas[indice].name = mercado.campos[indice];
+        entradas[indice].id = mercado.campos[indice];
+        entradas[indice].value = valoresPorMercado[clave][mercado.campos[indice]];
+        document.querySelector(selector).htmlFor = mercado.campos[indice];
+      });
+      resultado.hidden = true;
+      document.querySelectorAll(".pestana").forEach((pestana) => {
+        const activa = pestana.dataset.vista === "individual" && pestana.dataset.mercado === clave;
+        pestana.classList.toggle("activa", activa);
+        pestana.setAttribute("aria-selected", String(activa));
+      });
+    }
+
+    async function cargarListaHoy() {
+      listaApuestasHoy.replaceChildren();
+
+      try {
+        const respuestaPartidos = await fetch("/partidos-hoy");
+        const datosHoy = await respuestaPartidos.json();
+        if (!respuestaPartidos.ok) {
+          throw new Error(datosHoy.detail || "No se pudo cargar la lista de partidos.");
+        }
+
+        const partidos = (datosHoy.partidos || []).filter((partido) => partido.estado !== "cancelado");
+        const partidosAnalizados = [];
+        for (const partido of partidos) {
+          const resultados = await Promise.all(mercadosCompletos.map(async (mercado) => {
+            const datosMercado = partido.mercados && partido.mercados[mercado.endpoint];
+            if (!datosMercado) return { mercado, sinDatos: true };
+
+            const respuestaAnalisis = await fetch(`/analizar-${mercado.endpoint}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(datosMercado),
+            });
+            const analisis = await respuestaAnalisis.json();
+            if (!respuestaAnalisis.ok) {
+              throw new Error(`${partido.local} vs ${partido.visitante}, ${mercado.nombre}: ${analisis.detail || "error de análisis."}`);
+            }
+
+            const respuestaKelly = await fetch("/calcular-kelly", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                probabilidad: analisis.probabilidad,
+                cuota: analisis.cuota,
+                banco: partido.banco,
+                recomendacion: analisis.recomendacion,
+              }),
+            });
+            const kelly = await respuestaKelly.json();
+            if (!respuestaKelly.ok) {
+              throw new Error(`${partido.local} vs ${partido.visitante}, ${mercado.nombre}: ${kelly.detail || "error de Kelly."}`);
+            }
+            return { mercado, analisis, kelly };
+          }));
+          partidosAnalizados.push({ partido, resultados });
+        }
+
+        partidosAnalizados.forEach(({ partido, resultados }) => {
+          const aprobados = resultados.filter((resultadoMercado) =>
+            !resultadoMercado.sinDatos && resultadoMercado.analisis.recomendacion !== "NO HAY VALOR"
+          );
+          const tarjeta = document.createElement("li");
+          const acordeon = document.createElement("details");
+          acordeon.className = "partido-hoy";
+          const titulo = document.createElement("summary");
+          titulo.textContent = `${partido.local} vs ${partido.visitante} (${aprobados.length})`;
+          acordeon.appendChild(titulo);
+
+          const detalle = document.createElement("div");
+          detalle.className = "detalle-partido";
+          const aprobadosOrdenados = aprobados.concat(
+            resultados.filter((resultadoMercado) => !aprobados.includes(resultadoMercado))
+          );
+
+          aprobadosOrdenados.forEach(({ mercado, analisis, kelly, sinDatos }) => {
+            const resultadoMercado = document.createElement("section");
+            const encabezado = document.createElement("strong");
+            encabezado.textContent = `${mercado.nombre} · ${mercado.opcion}`;
+            resultadoMercado.appendChild(encabezado);
+
+            if (sinDatos) {
+              resultadoMercado.className = "mercado-rechazado";
+              const mensaje = document.createElement("p");
+              mensaje.textContent = "Faltan datos para analizar este mercado.";
+              resultadoMercado.appendChild(mensaje);
+            } else if (analisis.recomendacion === "NO HAY VALOR") {
+              resultadoMercado.className = "mercado-rechazado";
+              const estado = document.createElement("p");
+              estado.textContent = "❌ NO APUSTES";
+              const explicacion = document.createElement("p");
+              explicacion.textContent = "No se encontró valor en este mercado, la casa paga muy poquito para el riesgo. Mejor no apostar aquí.";
+              resultadoMercado.append(estado, explicacion);
+            } else {
+              resultadoMercado.className = "mercado-aprobado";
+              const estado = document.createElement("p");
+              estado.textContent = "✅ APUESTA";
+              const datos = document.createElement("p");
+              datos.textContent = `Valor: ${analisis.valor.toFixed(2)}% · Probabilidad: ${(analisis.probabilidad * 100).toFixed(2)}% · Stake Kelly (¼): $${kelly.stake_recomendado.toFixed(2)} · Porcentaje del banco: ${kelly.porcentaje_banco.toFixed(2)}%`;
+              resultadoMercado.append(estado, datos);
+
+              const tituloComoApostar = document.createElement("strong");
+              tituloComoApostar.textContent = "👉 CÓMO APOSTAR ESTO:";
+              const pasos = [
+                "Abre tu casa de apuestas de preferencia",
+                `Busca el partido: ${partido.local} vs ${partido.visitante}`,
+                `Busca el mercado: ${mercado.nombre}`,
+                `Elige la opción: ${mercado.opcion}`,
+                `Apuesta: $${kelly.stake_recomendado.toFixed(2)}`,
+                "Verifica la cuota en tu casa de apuestas de preferencia antes de apostar, porque cambia en vivo.",
+              ];
+              const listaPasos = document.createElement("ol");
+              listaPasos.className = "pasos-hoy";
+              pasos.forEach((paso) => {
+                const itemPaso = document.createElement("li");
+                itemPaso.textContent = paso;
+                listaPasos.appendChild(itemPaso);
+              });
+              const guia = document.createElement("div");
+              guia.className = "como-apostar";
+              guia.append(tituloComoApostar, listaPasos);
+              resultadoMercado.appendChild(guia);
+            }
+            detalle.appendChild(resultadoMercado);
+          });
+
+          acordeon.appendChild(detalle);
+          tarjeta.appendChild(acordeon);
+          listaApuestasHoy.appendChild(tarjeta);
+        });
+
+      } catch (error) {
+        const aviso = document.createElement("li");
+        aviso.textContent = "No se pudo mostrar la lista. Intenta de nuevo en unos minutos.";
+        listaApuestasHoy.appendChild(aviso);
+      }
+    }
+
+    document.querySelectorAll(".pestana").forEach((pestana) => {
+      pestana.addEventListener("click", async () => {
+        if (pestana.dataset.vista === "hoy") {
+          document.querySelector("#vista_hoy").hidden = false;
+          document.querySelector("#vista_completa").hidden = true;
+          document.querySelector("#vista_individual").hidden = true;
+          await cargarListaHoy();
+          document.querySelectorAll(".pestana").forEach((otraPestana) => {
+            const activa = otraPestana === pestana;
+            otraPestana.classList.toggle("activa", activa);
+            otraPestana.setAttribute("aria-selected", String(activa));
+          });
+        } else if (pestana.dataset.vista === "completo") {
+          document.querySelector("#vista_hoy").hidden = true;
+          document.querySelector("#vista_completa").hidden = false;
+          document.querySelector("#vista_individual").hidden = true;
+          document.querySelectorAll(".pestana").forEach((otraPestana) => {
+            const activa = otraPestana === pestana;
+            otraPestana.classList.toggle("activa", activa);
+            otraPestana.setAttribute("aria-selected", String(activa));
+          });
+        } else {
+          seleccionarMercado(pestana.dataset.mercado);
+        }
+      });
+    });
+
+    cargarListaHoy();
+    window.setInterval(() => {
+      if (!document.querySelector("#vista_hoy").hidden) cargarListaHoy();
+    }, 5 * 60 * 1000);
+
+    formularioCompleto.addEventListener("submit", async (evento) => {
+      evento.preventDefault();
+      resultadoCompleto.hidden = false;
+      resultadoCompleto.className = "";
+      resultadoCompleto.textContent = "Analizando los cuatro mercados…";
+      botonCompleto.disabled = true;
+
+      const datos = Object.fromEntries(new FormData(formularioCompleto));
+      const banco = Number(datos.banco);
+      const equipoLocal = datos.equipo_local;
+      const equipoVisitante = datos.equipo_visitante;
+
+      try {
+        const resultados = await Promise.all(mercadosCompletos.map(async (mercado) => {
+          const payload = Object.fromEntries(
+            mercado.campos.map((campo) => [campo, Number(datos[campo])])
+          );
+          const respuestaAnalisis = await fetch(`/analizar-${mercado.endpoint}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const analisis = await respuestaAnalisis.json();
+          if (!respuestaAnalisis.ok) {
+            throw new Error(`${mercado.nombre}: ${analisis.detail || "falló el análisis."}`);
+          }
+
+          const respuestaKelly = await fetch("/calcular-kelly", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              probabilidad: analisis.probabilidad,
+              cuota: analisis.cuota,
+              banco,
+              recomendacion: analisis.recomendacion,
+            }),
+          });
+          const kelly = await respuestaKelly.json();
+          if (!respuestaKelly.ok) {
+            throw new Error(`${mercado.nombre}: ${kelly.detail || "falló el cálculo Kelly."}`);
+          }
+          return { mercado, analisis, kelly };
+        }));
+
+        const apuestas = resultados.filter(({ analisis }) => analisis.recomendacion !== "NO HAY VALOR").length;
+        const filas = resultados.map(({ mercado, analisis, kelly }) => {
+          if (analisis.recomendacion === "NO HAY VALOR") {
+            return `
+              <article class="fila-resultado fila-no-apuesta">
+                <strong>${mercado.nombre}</strong><br>
+                ❌ NO APUSTES<br>
+                Valor: ${analisis.valor.toFixed(2)}%
+              </article>
+            `;
+          }
+          return `
+            <article class="fila-resultado fila-apuesta">
+              <strong>${mercado.nombre} · ${mercado.opcion}</strong><br>
+              ✅ APUESTA<br>
+              Valor: ${analisis.valor.toFixed(2)}% · Probabilidad: ${(analisis.probabilidad * 100).toFixed(2)}%<br>
+              Stake Kelly (¼): $${kelly.stake_recomendado.toFixed(2)} · Porcentaje del banco: ${kelly.porcentaje_banco.toFixed(2)}%
+              <div class="como-apostar">
+                <strong>👉 CÓMO APOSTAR ESTO:</strong>
+                <ol>
+                  <li>Abre tu casa de apuestas de preferencia</li>
+                  <li>Busca el partido: ${escaparHtml(equipoLocal)} vs ${escaparHtml(equipoVisitante)}</li>
+                  <li>Busca el mercado: ${mercado.nombre}</li>
+                  <li>Elige la opción: ${mercado.opcion}</li>
+                  <li>Apuesta: $${kelly.stake_recomendado.toFixed(2)}</li>
+                  <li>Tú pusiste cuota ${analisis.cuota.toFixed(2)}. Antes de apostar, verifica que la cuota siga igual en tu casa de apuestas de preferencia, porque la cuota cambia en vivo.</li>
+                </ol>
+              </div>
+            </article>
+          `;
+        }).join("");
+        const resumen = apuestas === 0
+          ? "Hoy NO hay valor, no apuestes"
+          : `Hoy hay ${apuestas} ${apuestas === 1 ? "apuesta" : "apuestas"} de valor de 4 mercados`;
+
+        resultadoCompleto.innerHTML = `
+          <h2 id="resumen_partido"></h2>
+          ${filas}
+          <p class="resumen-completo">${resumen}</p>
+        `;
+        resultadoCompleto.querySelector("#resumen_partido").textContent =
+          `Partido: ${equipoLocal} vs. ${equipoVisitante}`;
+      } catch (error) {
+        resultadoCompleto.className = "error";
+        resultadoCompleto.textContent = `Error: ${error.message}. Intenta de nuevo.`;
+      } finally {
+        botonCompleto.disabled = false;
+      }
+    });
+
+    formulario.addEventListener("submit", async (evento) => {
+      evento.preventDefault();
+      resultado.hidden = false;
+      resultado.className = "";
+      resultado.textContent = "Analizando…";
+      boton.disabled = true;
+
+      const datos = Object.fromEntries(new FormData(formulario));
+      for (const campo of Object.keys(datos)) datos[campo] = Number(datos[campo]);
+      const banco = datos.banco;
+      delete datos.banco;
+
+      try {
+        const respuesta = await fetch(`/analizar-${mercados[mercadoActivo].endpoint}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(datos),
+        });
+        const analisis = await respuesta.json();
+        if (!respuesta.ok) {
+          throw new Error(analisis.detail || "No se pudo completar el análisis.");
+        }
+
+        const respuestaKelly = await fetch("/calcular-kelly", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            probabilidad: analisis.probabilidad,
+            cuota: analisis.cuota,
+            banco,
+            recomendacion: analisis.recomendacion,
+          }),
+        });
+        const kelly = await respuestaKelly.json();
+        if (!respuestaKelly.ok) {
+          throw new Error(kelly.detail || "No se pudo calcular el stake Kelly.");
+        }
+
+        const probabilidad = (analisis.probabilidad * 100).toFixed(2);
+        const recomendacion = analisis.recomendacion;
+        resultado.innerHTML = `
+          <div class="metricas">
+            <div><strong>Probabilidad:</strong> ${probabilidad}%</div>
+            <div><strong>Valor:</strong> ${analisis.valor.toFixed(2)}%</div>
+            <div><strong>Stake Kelly (¼):</strong> $${kelly.stake_recomendado.toFixed(2)}</div>
+            <div><strong>Porcentaje del banco:</strong> ${kelly.porcentaje_banco.toFixed(2)}%</div>
+          </div>
+          <p class="recomendacion ${recomendacion === "NO HAY VALOR" ? "sin-valor" : "con-valor"}">
+            ${recomendacion}
+          </p>
+        `;
+      } catch (error) {
+        resultado.className = "error";
+        resultado.textContent = `Error: ${error.message}. Intenta de nuevo.`;
+      } finally {
+        boton.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,1 @@
+Para cambiar un partido, abre partidos_hoy.json, cambia Local, Visitante, promedios y cuotas, guarda, y en 5 minutos la Lista se actualiza sola. No toques nada más.

@@ -1,0 +1,24 @@
+PLAN FASE C: VALIDACIÓN CON FUENTES DE DATOS
+
+Antes de generar un análisis, el sistema deberá consultar varias fuentes independientes:
+- APIs de estadísticas de partidos y equipos.
+- APIs de cuotas en vivo.
+- Historial de resultados y métricas.
+- Información de bajas y jugadores lesionados.
+- Clima previsto para el partido.
+- Estado del partido, incluida la confirmación de cancelaciones.
+
+CRITERIO INTERNO DE CONFIANZA
+
+- Si dos o más fuentes coinciden en un dato, considerar el análisis más fiable.
+- Si una fuente presenta un dato muy diferente al resto, marcarlo internamente como "dato dudoso" y evitar tratarlo como confirmado.
+- Estas marcas de confianza son solo para uso interno y no se muestran al cliente.
+
+PRESENTACIÓN AL CLIENTE
+
+- El cliente solo verá la recomendación: APUESTA o NO APUESTES.
+- No mostrar al cliente el origen de los datos, nombres de APIs ni referencias a IA.
+
+ALCANCE DE ESTA FASE
+
+Este archivo describe el plan. No conectar fuentes ni cambiar la Lista de Hoy o las fórmulas hasta terminar el despliegue en Vercel.

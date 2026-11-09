@@ -1,0 +1,16 @@
+DEPLOY DE EDGE-LATAM EN VERCEL
+
+1. Sube la carpeta EDGE-LATAM a un repositorio de GitHub. Incluye app.py, requirements.txt, vercel.json, frontend/ y backend/.
+2. Crea una cuenta en Vercel e inicia sesión con GitHub.
+3. En Vercel, elige Add New → Project y conecta el repositorio EDGE-LATAM.
+4. Deja la configuración detectada por Vercel. No agregues un comando de build ni una carpeta de salida.
+5. Pulsa Deploy y espera a que termine la publicación.
+6. Abre el enlace que Vercel muestra, por ejemplo https://edge-latam.vercel.app. Lista de Hoy aparecerá primero.
+
+Para cambiar los partidos del día:
+1. Edita backend/partidos_hoy.json en el repositorio.
+2. Cambia local, visitante, estado, promedios, cuotas y banco. Guarda los cambios.
+3. Sube el cambio a GitHub. Vercel publicará una versión nueva automáticamente.
+4. La Lista de Hoy vuelve a consultar los datos cada 5 minutos mientras esa pestaña está abierta.
+
+Los archivos publicados por Vercel forman parte de esa versión del sitio. Por eso, después de editar partidos_hoy.json hay que publicar el cambio en GitHub para que Vercel despliegue los datos nuevos.
