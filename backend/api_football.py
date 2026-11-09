@@ -35,24 +35,29 @@ def _get_json(endpoint: str, parameters: Dict[str, object], api_key: str) -> Dic
     return payload
 
 
-def _league_id(api_key: str, season: int) -> Optional[int]:
+def _league_ids(api_key: str, season: int) -> List[int]:
     payload = _get_json(
         "leagues",
         {"country": "Colombia", "season": season},
         api_key,
     )
+    ids = []
     for entry in payload.get("response", []):
         league = entry.get("league", {})
         country = entry.get("country", {})
+        league_name = str(league.get("name", "")).strip().casefold()
+        es_primera_colombiana = league_name in {"primera a", "primera b"} or (
+            "primera a" in league_name or "primera b" in league_name
+        )
         if (
-            str(league.get("name", "")).strip().casefold() == "primera b"
+            es_primera_colombiana
             and str(country.get("name", "")).strip().casefold() == "colombia"
         ):
             try:
-                return int(league["id"])
+                ids.append(int(league["id"]))
             except (KeyError, TypeError, ValueError):
-                return None
-    return None
+                continue
+    return ids
 
 
 def _as_int(value: object) -> Optional[int]:
@@ -98,6 +103,18 @@ def _pair_total(home: Optional[int], away: Optional[int]) -> Optional[int]:
     return home + away
 
 
+def _hora_inicio_colombia(fixture_date: object) -> Optional[str]:
+    if not fixture_date:
+        return None
+    try:
+        fecha = datetime.fromisoformat(str(fixture_date).replace("Z", "+00:00"))
+        if fecha.tzinfo is None:
+            fecha = fecha.replace(tzinfo=ZoneInfo(COLOMBIA_TIMEZONE))
+        return fecha.astimezone(ZoneInfo(COLOMBIA_TIMEZONE)).strftime("%H:%M")
+    except (TypeError, ValueError):
+        return None
+
+
 def _fixture_record(
     fixture: Dict[str, object],
     statistics: List[Dict[str, object]],
@@ -121,7 +138,8 @@ def _fixture_record(
         away_stats = _team_statistics(statistics[1].get("statistics", []))
 
     fixture_info = fixture.get("fixture", {})
-    status_short = str(fixture_info.get("status", {}).get("short", "")).upper()
+    status_info = fixture_info.get("status", {})
+    status_short = str(status_info.get("short", "")).upper()
     if status_short in FINISHED_STATUSES:
         match_state = "finalizado"
     elif status_short in LIVE_STATUSES:
@@ -145,6 +163,8 @@ def _fixture_record(
         "local": home_name,
         "visitante": away_name,
         "estado": match_state,
+        "minuto": status_info.get("elapsed"),
+        "hora_inicio": _hora_inicio_colombia(fixture_info.get("date")),
         "marcador_local": home_goals,
         "marcador_visitante": away_goals,
         "marcador_final": _pair_total(home_goals, away_goals),
@@ -159,30 +179,37 @@ def _fixture_record(
 
 
 def obtener_partidos_primera_b_hoy() -> List[Dict[str, object]]:
-    """Devuelve fixtures y estadísticas de Primera B para hoy, o [] si falla la API."""
+    """Devuelve fixtures colombianos de Primera A/B y sus estadísticas finales."""
     api_key = os.getenv("API_FOOTBALL_KEY", "").strip()
     if not api_key:
+        print("Falta KEY")
         return []
 
     try:
         today = datetime.now(ZoneInfo(COLOMBIA_TIMEZONE)).date()
         season = today.year
-        league_id = _league_id(api_key, season)
-        if league_id is None:
+        league_ids = _league_ids(api_key, season)
+        if not league_ids:
+            print("API-Football: no se encontraron ligas colombianas Primera A/B para la temporada {}".format(season))
             return []
 
-        payload = _get_json(
-            "fixtures",
-            {
-                "date": today.isoformat(),
-                "league": league_id,
-                "season": season,
-                "timezone": COLOMBIA_TIMEZONE,
-            },
-            api_key,
-        )
-        fixtures = payload.get("response", [])
-        if not isinstance(fixtures, list) or not fixtures:
+        fixtures = []
+        for league_id in league_ids:
+            payload = _get_json(
+                "fixtures",
+                {
+                    "date": today.isoformat(),
+                    "league": league_id,
+                    "season": season,
+                    "timezone": COLOMBIA_TIMEZONE,
+                },
+                api_key,
+            )
+            league_fixtures = payload.get("response", [])
+            if isinstance(league_fixtures, list):
+                fixtures.extend(league_fixtures)
+        if not fixtures:
+            print("API-Football: no devolvió fixtures colombianos Primera A/B para {}".format(today.isoformat()))
             return []
 
         fixture_ids = []
@@ -192,16 +219,16 @@ def obtener_partidos_primera_b_hoy() -> List[Dict[str, object]]:
             except (KeyError, TypeError, ValueError):
                 fixture_ids.append(None)
 
-        # Solo se consultan estadísticas cuando el fixture terminó; para el
-        # resto basta su estado y evitamos llamadas de estadísticas innecesarias.
-        finished_ids = set()
+        # Consultar estadísticas tanto en vivo como al finalizar permite
+        # mostrar el progreso y la liquidación de cada mercado.
+        stats_fixture_ids = set()
         for item, fixture_id in zip(fixtures, fixture_ids):
             status = str(item.get("fixture", {}).get("status", {}).get("short", "")).upper()
-            if fixture_id is not None and status in FINISHED_STATUSES:
-                finished_ids.add(fixture_id)
+            if fixture_id is not None and (status in FINISHED_STATUSES or status in LIVE_STATUSES):
+                stats_fixture_ids.add(fixture_id)
 
         stats_by_id: Dict[int, List[Dict[str, object]]] = {}
-        valid_ids = [fixture_id for fixture_id in fixture_ids if fixture_id in finished_ids]
+        valid_ids = [fixture_id for fixture_id in fixture_ids if fixture_id in stats_fixture_ids]
         if valid_ids:
             with ThreadPoolExecutor(max_workers=min(8, len(valid_ids))) as executor:
                 futures = {

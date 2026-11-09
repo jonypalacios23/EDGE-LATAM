@@ -24,6 +24,7 @@ app.add_middleware(
 )
 
 
+@app.get("/api/partidos")
 @app.get("/partidos-hoy")
 def obtener_partidos_hoy() -> Dict[str, object]:
     ruta_partidos = Path(__file__).resolve().parent / "partidos_hoy.json"
@@ -38,11 +39,19 @@ def obtener_partidos_hoy() -> Dict[str, object]:
                 resultados_api = []
             for partido in datos["partidos"]:
                 if isinstance(partido, dict):
-                    partido["resultado_real"] = buscar_resultado_partido(
+                    resultado_real = buscar_resultado_partido(
                         str(partido.get("local", "")),
                         str(partido.get("visitante", "")),
                         resultados_api,
                     )
+                    if resultados_api and resultado_real is None:
+                        print(
+                            "API-Football: sin coincidencia para {} vs {}".format(
+                                partido.get("local", ""),
+                                partido.get("visitante", ""),
+                            )
+                        )
+                    partido["resultado_real"] = resultado_real
             return datos
     except (OSError, UnicodeError, json.JSONDecodeError):
         pass

@@ -137,6 +137,8 @@
     .resultado-ganado { color: #126b32; }
     .resultado-perdido { color: #aa2020; }
     .resultado-pendiente { color: #586174; }
+    .barra-progreso { height: 10px; margin-top: 8px; overflow: hidden; border-radius: 999px; background: #e7ebf0; }
+    .barra-progreso > span { display: block; height: 100%; border-radius: inherit; background: #22a447; transition: width .25s ease; }
     .pasos-hoy { margin: 10px 0 0; padding-left: 24px; color: #24402f; line-height: 1.6; }
     .resumen-partido-hoy { margin: 14px 2px 0; font-weight: 700; }
     #aviso_lista_hoy { color: #586174; }
@@ -318,31 +320,74 @@
 
     function crearIndicadorResultado(partido, mercado, analisis, kelly) {
       const indicador = document.createElement("div");
-      indicador.className = "indicador-resultado resultado-pendiente";
+      const mostrarEstado = (texto, clase) => {
+        indicador.className = `indicador-resultado ${clase}`;
+        const estado = document.createElement("div");
+        estado.textContent = texto;
+        indicador.replaceChildren(estado);
+        return indicador;
+      };
+      const agregarBarraProgreso = (total) => {
+        const barra = document.createElement("div");
+        barra.className = "barra-progreso";
+        barra.setAttribute("role", "progressbar");
+        barra.setAttribute("aria-label", `Progreso de ${mercado.nombre}`);
+        barra.setAttribute("aria-valuemin", "0");
+        barra.setAttribute("aria-valuemax", String(mercado.linea));
+        if (total !== null && total !== undefined) barra.setAttribute("aria-valuenow", String(total));
+        const avance = document.createElement("span");
+        const porcentaje = total === null || total === undefined
+          ? 0
+          : Math.min(100, Math.max(0, Number(total) / mercado.linea * 100));
+        avance.style.width = `${porcentaje}%`;
+        barra.appendChild(avance);
+        indicador.appendChild(barra);
+      };
       const resultado = partido.resultado_real;
       if (!resultado || !resultado.estado) {
-        indicador.textContent = "⏳ PENDIENTE";
-        return indicador;
-      }
-      if (resultado.estado === "en_juego") {
-        indicador.textContent = "⏳ EN JUEGO";
-        return indicador;
+        return mostrarEstado("⏳ PENDIENTE", "resultado-pendiente");
       }
       const total = resultado[mercado.resultado];
-      if (resultado.estado !== "finalizado" || total === null || total === undefined) {
-        indicador.textContent = "⏳ PENDIENTE";
+      if (resultado.estado === "en_juego") {
+        const minuto = Number.isFinite(Number(resultado.minuto)) ? `Min ${resultado.minuto}'` : "Min --'";
+        const totalTexto = total === null || total === undefined ? "--" : String(total);
+        const umbralGanador = Math.floor(mercado.linea) + 1;
+        const restantes = total === null || total === undefined
+          ? null
+          : Math.max(0, umbralGanador - Number(total));
+        const progreso = restantes === null
+          ? "Estadísticas pendientes"
+          : restantes === 0
+            ? "Línea superada"
+            : `Faltan ${restantes} para ganar`;
+        mostrarEstado(
+          `🟢 EN VIVO - ${minuto} - ${mercado.nombre}: ${totalTexto} / ${mercado.linea} ${mercado.unidad} - ${progreso}`,
+          "resultado-pendiente"
+        );
+        agregarBarraProgreso(total);
         return indicador;
       }
-      const ganada = Number(total) > mercado.linea;
-      if (ganada) {
-        const ganancia = kelly.stake_recomendado * (analisis.cuota - 1);
-        indicador.className = "indicador-resultado resultado-ganado";
-        indicador.textContent = `✅ GANADA - Resultado: ${total} ${mercado.unidad} - Línea: ${mercado.opcion} - +$${ganancia.toFixed(2)} ganados`;
-      } else {
-        indicador.className = "indicador-resultado resultado-perdido";
-        indicador.textContent = `❌ PERDIDA - Resultado: ${total} ${mercado.unidad} - Línea: ${mercado.opcion} - -$${kelly.stake_recomendado.toFixed(2)} perdidos`;
+      if (resultado.estado === "finalizado") {
+        if (total === null || total === undefined) {
+          return mostrarEstado("🏁 FINALIZADO - Estadísticas pendientes", "resultado-pendiente");
+        }
+        const ganada = Number(total) > mercado.linea;
+        if (ganada) {
+          const ganancia = kelly.stake_recomendado * (analisis.cuota - 1);
+          return mostrarEstado(
+            `✅ GANADA - Final: ${total} / ${mercado.linea} ${mercado.unidad} - +$${ganancia.toFixed(2)} ganados`,
+            "resultado-ganado"
+          );
+        }
+        return mostrarEstado(
+          `❌ PERDIDA - Final: ${total} / ${mercado.linea} ${mercado.unidad} - -$${kelly.stake_recomendado.toFixed(2)} perdidos`,
+          "resultado-perdido"
+        );
       }
-      return indicador;
+      if (resultado.hora_inicio) {
+        return mostrarEstado(`⏳ Empieza a las ${resultado.hora_inicio}`, "resultado-pendiente");
+      }
+      return mostrarEstado("⏳ PENDIENTE", "resultado-pendiente");
     }
 
     let mercadoActivo = "corners";
@@ -391,7 +436,7 @@
       listaApuestasHoy.replaceChildren();
 
       try {
-        const respuestaPartidos = await fetch(apiUrl("/partidos-hoy"));
+        const respuestaPartidos = await fetch(apiUrl("/api/partidos"));
         const datosHoy = await respuestaPartidos.json();
         if (!respuestaPartidos.ok) {
           throw new Error(datosHoy.detail || "No se pudo cargar la lista de partidos.");
@@ -548,9 +593,7 @@
     });
 
     cargarListaHoy();
-    window.setInterval(() => {
-      if (!document.querySelector("#vista_hoy").hidden) cargarListaHoy();
-    }, 5 * 60 * 1000);
+    window.setInterval(cargarListaHoy, 120 * 1000);
 
     formularioCompleto.addEventListener("submit", async (evento) => {
       evento.preventDefault();
