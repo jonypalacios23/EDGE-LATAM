@@ -401,11 +401,19 @@
 
     function crearIndicadorResultado(partido, mercado, analisis, kelly) {
       const indicador = document.createElement("div");
-      const mostrarEstado = (texto, clase) => {
+      const mostrarEstado = (texto, clase, fuenteUrl, fuenteNombre) => {
         indicador.className = `indicador-resultado ${clase}`;
         const estado = document.createElement("div");
         estado.textContent = texto;
         indicador.replaceChildren(estado);
+        if (fuenteUrl) {
+          const fuente = document.createElement("a");
+          fuente.href = fuenteUrl;
+          fuente.target = "_blank";
+          fuente.rel = "noopener noreferrer";
+          fuente.textContent = `Fuente: ${fuenteNombre || "resultado web"}`;
+          indicador.appendChild(fuente);
+        }
         return indicador;
       };
       const agregarBarraProgreso = (total) => {
@@ -432,12 +440,15 @@
       }
       if (estadoPartido === "finalizado") {
         if (liquidacion && liquidacion.estado === "GANADO") {
-          return mostrarEstado(liquidacion.texto, "resultado-ganado");
+          return mostrarEstado(liquidacion.texto, "resultado-ganado", liquidacion.fuente_url, liquidacion.fuente_nombre);
         }
         if (liquidacion && liquidacion.estado === "PERDIDO") {
-          return mostrarEstado(liquidacion.texto, "resultado-perdido");
+          return mostrarEstado(liquidacion.texto, "resultado-perdido", liquidacion.fuente_url, liquidacion.fuente_nombre);
         }
-        return mostrarEstado("Finalizado - Esperando estadística oficial", "resultado-pendiente");
+        return mostrarEstado(
+          liquidacion && liquidacion.texto ? liquidacion.texto : "PENDIENTE - Buscando en Google...",
+          "resultado-pendiente"
+        );
       }
       if (estadoPartido === "en_juego") {
         const total = resultado[mercado.resultado];

@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from api_espn import buscar_resultado_partido, obtener_resultados_partidos_hoy
 from corners import analizar_corners
+from google_stats import buscar_estadistica_google
 from goles import analizar_goles
 from kelly import calcular_kelly
 from tarjetas import analizar_tarjetas
@@ -51,7 +52,7 @@ def liquidar_mercado(
             else:
                 texto = "Finalizado - {} reales: {} - Línea: {} = ANULADO / REEMBOLSO".format(nombre, total, linea)
         elif estado == "PENDIENTE" and resultado and resultado.get("estado") == "finalizado":
-            texto = "Finalizado - Esperando estadística oficial"
+            texto = "PENDIENTE - Buscando en Google..."
         elif estado == "PENDIENTE":
             texto = "PENDIENTE"
         elif estado == "GANADO" or estado == "PERDIDO":
@@ -189,7 +190,45 @@ def obtener_partidos_hoy(
                     if isinstance(mercados, dict):
                         for clave_mercado, datos_mercado in mercados.items():
                             if isinstance(datos_mercado, dict):
-                                liquidaciones[clave_mercado] = liquidar_mercado(resultado_real, datos_mercado)
+                                liquidacion = liquidar_mercado(resultado_real, datos_mercado)
+                                tipo = str(datos_mercado.get("tipo", "")).casefold()
+                                if resultado_real and resultado_real.get("estado") == "finalizado" and tipo in {
+                                    "corners", "corner", "tarjetas", "cards", "goles", "goals"
+                                }:
+                                    dato_google = buscar_estadistica_google(partido, datos_mercado)
+                                    if dato_google is None:
+                                        liquidacion = {
+                                            "estado": "PENDIENTE",
+                                            "texto": "PENDIENTE - Buscando en Google...",
+                                            "total_real": None,
+                                            "linea": datos_mercado.get("linea"),
+                                            "tipo": tipo,
+                                        }
+                                    else:
+                                        clave_resultado = {
+                                            "corners": "corners_total",
+                                            "corner": "corners_total",
+                                            "tarjetas": "tarjetas_total",
+                                            "cards": "tarjetas_total",
+                                            "goles": "goles_total",
+                                            "goals": "goles_total",
+                                        }[tipo]
+                                        resultado_google = dict(resultado_real)
+                                        resultado_google[clave_resultado] = dato_google["total"]
+                                        liquidacion = liquidar_mercado(resultado_google, datos_mercado)
+                                        nombre = {
+                                            "corners": "córners", "corner": "córners",
+                                            "tarjetas": "tarjetas", "cards": "tarjetas",
+                                            "goles": "goles", "goals": "goles",
+                                        }[tipo]
+                                        liquidacion["texto"] = "{}: {} {} - Línea: {} = {}".format(
+                                            dato_google["fuente"], dato_google["total"], nombre,
+                                            datos_mercado.get("linea"), liquidacion["estado"]
+                                        )
+                                        liquidacion["fuente"] = dato_google["fuente"]
+                                        liquidacion["fuente_url"] = dato_google["fuente_url"]
+                                        liquidacion["fuente_nombre"] = dato_google["fuente_nombre"]
+                                liquidaciones[clave_mercado] = liquidacion
                     partido["liquidaciones"] = liquidaciones
             datos["error_api"] = error_api
             datos["tiene_datos_en_vivo"] = any(
