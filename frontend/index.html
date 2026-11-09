@@ -139,6 +139,12 @@
     .resultado-pendiente { color: #586174; }
     .barra-progreso { height: 10px; margin-top: 8px; overflow: hidden; border-radius: 999px; background: #e7ebf0; }
     .barra-progreso > span { display: block; height: 100%; border-radius: inherit; background: #22a447; transition: width .25s ease; }
+    #ultima_actualizacion { margin: 4px 0 12px; color: #586174; font-size: .9rem; }
+    .resumen-en-vivo { margin: 10px 0 14px; padding: 12px; border: 1px solid #d9dfe9; border-radius: 9px; background: #f8f9fc; }
+    .estado-partido-vivo { margin-bottom: 7px; font-weight: 800; }
+    .marcador-partido-vivo { margin-bottom: 8px; font-size: 1.1rem; font-weight: 750; }
+    .conteo-en-vivo { margin-top: 8px; font-size: .9rem; }
+    .boton-actualizar-partido { margin-top: 10px; padding: 8px 10px; font-size: .9rem; }
     .pasos-hoy { margin: 10px 0 0; padding-left: 24px; color: #24402f; line-height: 1.6; }
     .resumen-partido-hoy { margin: 14px 2px 0; font-weight: 700; }
     #aviso_lista_hoy { color: #586174; }
@@ -170,6 +176,7 @@
 
     <section id="vista_hoy">
       <h1>Lista de Hoy</h1>
+      <p id="ultima_actualizacion">Última actualización: --:-- - Próxima en 45 min</p>
       <ul id="lista_apuestas_hoy" aria-live="polite"></ul>
     </section>
 
@@ -318,6 +325,87 @@
       return String(texto).replace(/[&<>"']/g, (caracter) => caracteres[caracter]);
     }
 
+    const ultimaActualizacion = document.querySelector("#ultima_actualizacion");
+
+    function horaActual() {
+      return new Intl.DateTimeFormat("es-CO", {
+        timeZone: "America/Bogota",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).format(new Date());
+    }
+
+    function marcarActualizacion(sinDatos) {
+      const hora = horaActual();
+      ultimaActualizacion.textContent = `Última actualización: ${hora} - ${sinDatos ? "Sin datos en vivo" : "Próxima en 45 min"}`;
+      console.info(`Lista de Hoy consultada a las ${hora}; ${sinDatos ? "sin datos en vivo" : "datos en vivo disponibles"}.`);
+    }
+
+    function agregarBarraConteo(contenedor, nombre, total, linea, unidad) {
+      const fila = document.createElement("div");
+      fila.className = "conteo-en-vivo";
+      fila.textContent = `${nombre}: ${total === null || total === undefined ? "--" : total} / ${linea} ${unidad}`;
+      const barra = document.createElement("div");
+      barra.className = "barra-progreso";
+      barra.setAttribute("role", "progressbar");
+      barra.setAttribute("aria-label", `${nombre} frente a la línea ${linea}`);
+      barra.setAttribute("aria-valuemin", "0");
+      barra.setAttribute("aria-valuemax", String(linea));
+      if (total !== null && total !== undefined) barra.setAttribute("aria-valuenow", String(total));
+      const avance = document.createElement("span");
+      const porcentaje = total === null || total === undefined
+        ? 0
+        : Math.min(100, Math.max(0, Number(total) / linea * 100));
+      avance.style.width = `${porcentaje}%`;
+      barra.appendChild(avance);
+      fila.appendChild(barra);
+      contenedor.appendChild(fila);
+    }
+
+    function crearResumenEnVivo(partido) {
+      const panel = document.createElement("section");
+      panel.className = "resumen-en-vivo";
+      const resultado = partido.resultado_real;
+      let etiquetaEstado = "Sin datos en vivo";
+      if (partido.datos_en_vivo && resultado) {
+        if (resultado.estado === "finalizado") {
+          etiquetaEstado = "Finalizado";
+        } else if (resultado.estado_corto === "HT") {
+          etiquetaEstado = "Descanso";
+        } else if (resultado.estado === "en_juego") {
+          etiquetaEstado = resultado.minuto !== null && resultado.minuto !== undefined && Number.isFinite(Number(resultado.minuto))
+            ? `EN VIVO ${resultado.minuto}'`
+            : "EN VIVO";
+        } else if (resultado.hora_inicio) {
+          etiquetaEstado = `Programado · ${resultado.hora_inicio}`;
+        } else {
+          etiquetaEstado = "Programado";
+        }
+      }
+      const estado = document.createElement("div");
+      estado.className = "estado-partido-vivo";
+      estado.textContent = etiquetaEstado;
+      panel.appendChild(estado);
+
+      const marcador = document.createElement("div");
+      marcador.className = "marcador-partido-vivo";
+      const golesLocal = resultado && resultado.marcador_local !== null ? resultado.marcador_local : "--";
+      const golesVisitante = resultado && resultado.marcador_visitante !== null ? resultado.marcador_visitante : "--";
+      marcador.textContent = `Marcador: ${golesLocal} - ${golesVisitante}`;
+      panel.appendChild(marcador);
+
+      agregarBarraConteo(panel, "Tarjetas", resultado && resultado.tarjetas_total, 4.5, "tarjetas");
+      agregarBarraConteo(panel, "Córners", resultado && resultado.corners_total, 9.5, "córners");
+
+      const boton = document.createElement("button");
+      boton.type = "button";
+      boton.className = "boton-actualizar-partido";
+      boton.textContent = "Actualizar ahora";
+      panel.appendChild(boton);
+      return panel;
+    }
+
     function crearIndicadorResultado(partido, mercado, analisis, kelly) {
       const indicador = document.createElement("div");
       const mostrarEstado = (texto, clase) => {
@@ -344,12 +432,14 @@
         indicador.appendChild(barra);
       };
       const resultado = partido.resultado_real;
-      if (!resultado || !resultado.estado) {
-        return mostrarEstado("⏳ PENDIENTE", "resultado-pendiente");
+      if (!partido.datos_en_vivo || !resultado || !resultado.estado) {
+        return mostrarEstado("Sin datos en vivo", "resultado-pendiente");
       }
       const total = resultado[mercado.resultado];
       if (resultado.estado === "en_juego") {
-        const minuto = Number.isFinite(Number(resultado.minuto)) ? `Min ${resultado.minuto}'` : "Min --'";
+        const minuto = resultado.minuto !== null && resultado.minuto !== undefined && Number.isFinite(Number(resultado.minuto))
+          ? `Min ${resultado.minuto}'`
+          : "Min --'";
         const totalTexto = total === null || total === undefined ? "--" : String(total);
         const umbralGanador = Math.floor(mercado.linea) + 1;
         const restantes = total === null || total === undefined
@@ -369,7 +459,7 @@
       }
       if (resultado.estado === "finalizado") {
         if (total === null || total === undefined) {
-          return mostrarEstado("🏁 FINALIZADO - Estadísticas pendientes", "resultado-pendiente");
+          return mostrarEstado("🏁 Finalizado - Estadística no disponible", "resultado-pendiente");
         }
         const ganada = Number(total) > mercado.linea;
         if (ganada) {
@@ -388,6 +478,49 @@
         return mostrarEstado(`⏳ Empieza a las ${resultado.hora_inicio}`, "resultado-pendiente");
       }
       return mostrarEstado("⏳ PENDIENTE", "resultado-pendiente");
+    }
+
+    function configurarBotonActualizar(panel, partido, detalle, resultados) {
+      const boton = panel.querySelector(".boton-actualizar-partido");
+      boton.addEventListener("click", () => actualizarPartidoAhora(partido, panel, detalle, resultados));
+    }
+
+    async function actualizarPartidoAhora(partido, panel, detalle, resultados) {
+      const boton = panel.querySelector(".boton-actualizar-partido");
+      boton.disabled = true;
+      boton.textContent = "Consultando…";
+      const query = new URLSearchParams({ local: partido.local, visitante: partido.visitante });
+      try {
+        const respuesta = await fetch(apiUrl(`/api/partidos?${query.toString()}`), { cache: "no-store" });
+        const datos = await respuesta.json();
+        if (!respuesta.ok) throw new Error(datos.detail || "Falló la consulta del partido.");
+        const actualizado = (datos.partidos || [])[0];
+        if (actualizado) {
+          partido.resultado_real = actualizado.resultado_real;
+          partido.datos_en_vivo = actualizado.datos_en_vivo;
+        } else {
+          partido.resultado_real = null;
+          partido.datos_en_vivo = false;
+        }
+        resultados.forEach(({ mercado, analisis, kelly, sinDatos }) => {
+          if (sinDatos || !analisis || analisis.recomendacion === "NO HAY VALOR") return;
+          const seccion = detalle.querySelector(`[data-mercado="${mercado.endpoint}"]`);
+          const indicador = seccion && seccion.querySelector(".indicador-resultado");
+          if (indicador) indicador.replaceWith(crearIndicadorResultado(partido, mercado, analisis, kelly));
+        });
+        const nuevoPanel = crearResumenEnVivo(partido);
+        panel.replaceWith(nuevoPanel);
+        configurarBotonActualizar(nuevoPanel, partido, detalle, resultados);
+        marcarActualizacion(Boolean(datos.error_api) || !partido.datos_en_vivo);
+      } catch (error) {
+        console.error("Error al actualizar partido:", error);
+        partido.resultado_real = null;
+        partido.datos_en_vivo = false;
+        const nuevoPanel = crearResumenEnVivo(partido);
+        panel.replaceWith(nuevoPanel);
+        configurarBotonActualizar(nuevoPanel, partido, detalle, resultados);
+        marcarActualizacion(true);
+      }
     }
 
     let mercadoActivo = "corners";
@@ -433,6 +566,8 @@
     }
 
     async function cargarListaHoy() {
+      if (cargandoListaHoy) return;
+      cargandoListaHoy = true;
       listaApuestasHoy.replaceChildren();
 
       try {
@@ -442,7 +577,13 @@
           throw new Error(datosHoy.detail || "No se pudo cargar la lista de partidos.");
         }
 
-        const partidos = (datosHoy.partidos || []).filter((partido) => partido.estado !== "cancelado");
+        const partidos = (datosHoy.partidos || []).filter(
+          (partido) => partido.estado !== "cancelado" || partido.datos_en_vivo
+        );
+        partidos.forEach((partido) => {
+          partido.error_api = Boolean(datosHoy.error_api);
+        });
+        marcarActualizacion(Boolean(datosHoy.error_api) || !partidos.some((partido) => partido.datos_en_vivo));
         if (partidos.length === 0) {
           const aviso = document.createElement("li");
           aviso.textContent = "No hay partidos disponibles hoy.";
@@ -497,12 +638,15 @@
 
           const detalle = document.createElement("div");
           detalle.className = "detalle-partido";
+          const panelVivo = crearResumenEnVivo(partido);
+          detalle.appendChild(panelVivo);
           const aprobadosOrdenados = aprobados.concat(
             resultados.filter((resultadoMercado) => !aprobados.includes(resultadoMercado))
           );
 
           aprobadosOrdenados.forEach(({ mercado, analisis, kelly, sinDatos }) => {
             const resultadoMercado = document.createElement("section");
+            resultadoMercado.dataset.mercado = mercado.endpoint;
             const encabezado = document.createElement("strong");
             encabezado.textContent = `${mercado.nombre} · ${mercado.opcion}`;
             resultadoMercado.appendChild(encabezado);
@@ -553,15 +697,21 @@
             detalle.appendChild(resultadoMercado);
           });
 
+          configurarBotonActualizar(panelVivo, partido, detalle, resultados);
+
           acordeon.appendChild(detalle);
           tarjeta.appendChild(acordeon);
           listaApuestasHoy.appendChild(tarjeta);
         });
 
       } catch (error) {
+        console.error("Error al cargar Lista de Hoy:", error);
+        marcarActualizacion(true);
         const aviso = document.createElement("li");
         aviso.textContent = "No se pudo mostrar la lista. Intenta de nuevo en unos minutos.";
         listaApuestasHoy.appendChild(aviso);
+      } finally {
+        cargandoListaHoy = false;
       }
     }
 
@@ -592,8 +742,28 @@
       });
     });
 
+    let intervaloListaHoy = null;
+    let cargandoListaHoy = false;
+
+    function iniciarActualizacionListaHoy() {
+      if (intervaloListaHoy !== null) return;
+      intervaloListaHoy = window.setInterval(() => {
+        const vistaHoyActiva = !document.querySelector("#vista_hoy").hidden;
+        if (!document.hidden && vistaHoyActiva && !cargandoListaHoy) cargarListaHoy();
+      }, 2700000);
+    }
+
+    function detenerActualizacionListaHoy() {
+      if (intervaloListaHoy !== null) {
+        window.clearInterval(intervaloListaHoy);
+        intervaloListaHoy = null;
+      }
+    }
+
+    window.addEventListener("pagehide", detenerActualizacionListaHoy);
+    window.addEventListener("pageshow", iniciarActualizacionListaHoy);
+    iniciarActualizacionListaHoy();
     cargarListaHoy();
-    window.setInterval(cargarListaHoy, 120 * 1000);
 
     formularioCompleto.addEventListener("submit", async (evento) => {
       evento.preventDefault();

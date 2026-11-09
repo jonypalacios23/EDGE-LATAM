@@ -64,6 +64,12 @@ def _buscar_id_equipo(api_key: str, nombre: str) -> Optional[int]:
                 return int(team["id"])
             except (KeyError, TypeError, ValueError):
                 continue
+    print(
+        "API-Football team search sin coincidencia: equipo={} body={}".format(
+            nombre,
+            json.dumps(payload, ensure_ascii=False),
+        )
+    )
     return None
 
 
@@ -170,6 +176,7 @@ def _fixture_record(
         "local": home_name,
         "visitante": away_name,
         "estado": match_state,
+        "estado_corto": status_short,
         "minuto": status_info.get("elapsed"),
         "hora_inicio": _hora_inicio_colombia(fixture_info.get("date")),
         "marcador_local": home_goals,
@@ -192,47 +199,53 @@ def obtener_resultados_partidos_hoy(
     api_key = os.getenv("API_FOOTBALL_KEY", "").strip()
     if not api_key:
         print("Falta KEY")
-        return []
+        raise RuntimeError("Falta KEY")
 
     try:
         today = datetime.now(ZoneInfo(COLOMBIA_TIMEZONE)).date()
         fixtures_by_id = {}
         pares_validos = [(local, visitante) for local, visitante in pares_equipos if local and visitante]
         for local, visitante in pares_validos:
-            team_id = _buscar_id_equipo(api_key, local)
-            if team_id is None:
-                team_id = _buscar_id_equipo(api_key, visitante)
-            if team_id is None:
-                print("API-Football: no se encontró el ID del equipo {} vs {}".format(local, visitante))
-                continue
-            payload = _get_json(
-                "fixtures",
-                {
-                    "date": today.isoformat(),
-                    "team": team_id,
-                    "timezone": COLOMBIA_TIMEZONE,
-                },
-                api_key,
-            )
-            team_fixtures = payload.get("response", [])
-            if not isinstance(team_fixtures, list):
-                continue
-            for fixture in team_fixtures:
-                try:
-                    fixture_id = int(fixture["fixture"]["id"])
-                    local_api = str(fixture.get("teams", {}).get("home", {}).get("name", ""))
-                    visitante_api = str(fixture.get("teams", {}).get("away", {}).get("name", ""))
-                except (KeyError, TypeError, ValueError):
+            for nombre_equipo in (local, visitante):
+                team_id = _buscar_id_equipo(api_key, nombre_equipo)
+                if team_id is None:
                     continue
-                equipos_esperados = (
-                    _nombres_coinciden(local, local_api)
-                    and _nombres_coinciden(visitante, visitante_api)
-                ) or (
-                    _nombres_coinciden(local, visitante_api)
-                    and _nombres_coinciden(visitante, local_api)
+                payload = _get_json(
+                    "fixtures",
+                    {
+                        "date": today.isoformat(),
+                        "team": team_id,
+                        "timezone": COLOMBIA_TIMEZONE,
+                    },
+                    api_key,
                 )
-                if equipos_esperados:
-                    fixtures_by_id[fixture_id] = fixture
+                team_fixtures = payload.get("response", [])
+                print(
+                    "API-Football fixtures query: equipo={} team_id={} date={} response={}".format(
+                        nombre_equipo,
+                        team_id,
+                        today.isoformat(),
+                        json.dumps(team_fixtures, ensure_ascii=False),
+                    )
+                )
+                if not isinstance(team_fixtures, list):
+                    continue
+                for fixture in team_fixtures:
+                    try:
+                        fixture_id = int(fixture["fixture"]["id"])
+                        local_api = str(fixture.get("teams", {}).get("home", {}).get("name", ""))
+                        visitante_api = str(fixture.get("teams", {}).get("away", {}).get("name", ""))
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                    equipos_esperados = (
+                        _nombres_coinciden(local, local_api)
+                        and _nombres_coinciden(visitante, visitante_api)
+                    ) or (
+                        _nombres_coinciden(local, visitante_api)
+                        and _nombres_coinciden(visitante, local_api)
+                    )
+                    if equipos_esperados:
+                        fixtures_by_id[fixture_id] = fixture
         fixtures = list(fixtures_by_id.values())
         if not fixtures:
             print("API-Football: no encontró fixture de los equipos manuales para {}".format(today.isoformat()))
@@ -254,6 +267,7 @@ def obtener_resultados_partidos_hoy(
                 stats_fixture_ids.add(fixture_id)
 
         stats_by_id: Dict[int, List[Dict[str, object]]] = {}
+        stats_errors = set()
         valid_ids = [fixture_id for fixture_id in fixture_ids if fixture_id in stats_fixture_ids]
         if valid_ids:
             with ThreadPoolExecutor(max_workers=min(8, len(valid_ids))) as executor:
@@ -267,25 +281,31 @@ def obtener_resultados_partidos_hoy(
                     except Exception as error:
                         print("Error API:", error)
                         stats_by_id[fixture_id] = []
+                        stats_errors.add(fixture_id)
 
         output = []
         for item, fixture_id in zip(fixtures, fixture_ids):
             statistics = stats_by_id.get(fixture_id, []) if fixture_id is not None else []
-            output.append(_fixture_record(item, statistics))
+            record = _fixture_record(item, statistics)
+            record["error_estadisticas"] = fixture_id in stats_errors
+            output.append(record)
         return output
     except Exception as error:
         print("Error API:", error)
-        return []
+        raise
 
 
 def _normalizar_nombre(nombre: str) -> List[str]:
     texto = unicodedata.normalize("NFKD", nombre.casefold())
     texto = "".join(caracter for caracter in texto if not unicodedata.combining(caracter))
-    return [
+    tokens = [
         token
         for token in re.findall(r"[a-z0-9]+", texto)
         if token not in {"fc", "cd", "club", "deportes"}
     ]
+    if tokens and tokens[0] == "alianza":
+        return ["alianza"]
+    return tokens
 
 
 def _nombres_coinciden(nombre_manual: str, nombre_api: str) -> bool:

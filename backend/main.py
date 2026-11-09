@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, Union
+from typing import Dict, Optional, Union
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,22 +26,39 @@ app.add_middleware(
 
 @app.get("/api/partidos")
 @app.get("/partidos-hoy")
-def obtener_partidos_hoy() -> Dict[str, object]:
+def obtener_partidos_hoy(
+    local: Optional[str] = None,
+    visitante: Optional[str] = None,
+) -> Dict[str, object]:
     ruta_partidos = Path(__file__).resolve().parent / "partidos_hoy.json"
     try:
         with ruta_partidos.open("r", encoding="utf-8") as archivo:
             datos = json.load(archivo)
         if isinstance(datos, dict) and isinstance(datos.get("partidos"), list):
+            if local and visitante:
+                datos["partidos"] = [
+                    partido
+                    for partido in datos["partidos"]
+                    if isinstance(partido, dict)
+                    and str(partido.get("local", "")).casefold() == local.casefold()
+                    and str(partido.get("visitante", "")).casefold() == visitante.casefold()
+                ]
             pares_equipos = [
                 (str(partido.get("local", "")), str(partido.get("visitante", "")))
                 for partido in datos["partidos"]
                 if isinstance(partido, dict)
             ]
+            error_api = False
             try:
                 resultados_api = obtener_resultados_partidos_hoy(pares_equipos)
+                error_api = any(
+                    bool(resultado.get("error_estadisticas"))
+                    for resultado in resultados_api
+                )
             except Exception as error:
                 print("Error API:", error)
                 resultados_api = []
+                error_api = True
             for partido in datos["partidos"]:
                 if isinstance(partido, dict):
                     resultado_real = buscar_resultado_partido(
@@ -57,6 +74,12 @@ def obtener_partidos_hoy() -> Dict[str, object]:
                             )
                         )
                     partido["resultado_real"] = resultado_real
+                    partido["datos_en_vivo"] = resultado_real is not None
+            datos["error_api"] = error_api
+            datos["tiene_datos_en_vivo"] = any(
+                isinstance(partido, dict) and partido.get("datos_en_vivo")
+                for partido in datos["partidos"]
+            )
             return datos
     except (OSError, UnicodeError, json.JSONDecodeError):
         pass
