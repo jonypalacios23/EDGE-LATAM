@@ -7,6 +7,7 @@ import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Dict, List, Optional
+from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
@@ -25,13 +26,28 @@ def _get_json(endpoint: str, parameters: Dict[str, object], api_key: str) -> Dic
         "{}/{}?{}".format(API_BASE, endpoint, query),
         headers={"x-apisports-key": api_key, "Accept": "application/json"},
     )
-    with urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
-        content = response.read()
+    try:
+        with urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+            status_code = response.getcode()
+            content = response.read()
+    except HTTPError as error:
+        body = error.read().decode("utf-8", errors="replace")
+        raise RuntimeError(
+            "API-Football status {} body: {}".format(error.code, body)
+        ) from error
     if not content:
         return {"response": []}
-    payload = json.loads(content.decode("utf-8"))
+    body = content.decode("utf-8", errors="replace")
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError as error:
+        raise RuntimeError(
+            "API-Football status {} body: {}".format(status_code, body)
+        ) from error
     if payload.get("errors"):
-        raise ValueError("API-Football devolvió un error")
+        raise RuntimeError(
+            "API-Football status {} body: {}".format(status_code, body)
+        )
     return payload
 
 
