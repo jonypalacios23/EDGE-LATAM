@@ -6,7 +6,7 @@ import re
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -51,29 +51,20 @@ def _get_json(endpoint: str, parameters: Dict[str, object], api_key: str) -> Dic
     return payload
 
 
-def _league_ids(api_key: str, season: int) -> List[int]:
+def _buscar_id_equipo(api_key: str, nombre: str) -> Optional[int]:
     payload = _get_json(
-        "leagues",
-        {"country": "Colombia", "season": season},
+        "teams",
+        {"search": nombre, "country": "Colombia"},
         api_key,
     )
-    ids = []
     for entry in payload.get("response", []):
-        league = entry.get("league", {})
-        country = entry.get("country", {})
-        league_name = str(league.get("name", "")).strip().casefold()
-        es_primera_colombiana = league_name in {"primera a", "primera b"} or (
-            "primera a" in league_name or "primera b" in league_name
-        )
-        if (
-            es_primera_colombiana
-            and str(country.get("name", "")).strip().casefold() == "colombia"
-        ):
+        team = entry.get("team", {})
+        if _nombres_coinciden(nombre, str(team.get("name", ""))):
             try:
-                ids.append(int(league["id"]))
+                return int(team["id"])
             except (KeyError, TypeError, ValueError):
                 continue
-    return ids
+    return None
 
 
 def _as_int(value: object) -> Optional[int]:
@@ -194,8 +185,10 @@ def _fixture_record(
     }
 
 
-def obtener_partidos_primera_b_hoy() -> List[Dict[str, object]]:
-    """Devuelve fixtures colombianos de Primera A/B y sus estadísticas finales."""
+def obtener_resultados_partidos_hoy(
+    pares_equipos: List[Tuple[str, str]],
+) -> List[Dict[str, object]]:
+    """Busca en API-Football los fixtures de hoy de los equipos manuales."""
     api_key = os.getenv("API_FOOTBALL_KEY", "").strip()
     if not api_key:
         print("Falta KEY")
@@ -203,29 +196,46 @@ def obtener_partidos_primera_b_hoy() -> List[Dict[str, object]]:
 
     try:
         today = datetime.now(ZoneInfo(COLOMBIA_TIMEZONE)).date()
-        season = today.year
-        league_ids = _league_ids(api_key, season)
-        if not league_ids:
-            print("API-Football: no se encontraron ligas colombianas Primera A/B para la temporada {}".format(season))
-            return []
-
-        fixtures = []
-        for league_id in league_ids:
+        fixtures_by_id = {}
+        pares_validos = [(local, visitante) for local, visitante in pares_equipos if local and visitante]
+        for local, visitante in pares_validos:
+            team_id = _buscar_id_equipo(api_key, local)
+            if team_id is None:
+                team_id = _buscar_id_equipo(api_key, visitante)
+            if team_id is None:
+                print("API-Football: no se encontró el ID del equipo {} vs {}".format(local, visitante))
+                continue
             payload = _get_json(
                 "fixtures",
                 {
                     "date": today.isoformat(),
-                    "league": league_id,
-                    "season": season,
+                    "team": team_id,
                     "timezone": COLOMBIA_TIMEZONE,
                 },
                 api_key,
             )
-            league_fixtures = payload.get("response", [])
-            if isinstance(league_fixtures, list):
-                fixtures.extend(league_fixtures)
+            team_fixtures = payload.get("response", [])
+            if not isinstance(team_fixtures, list):
+                continue
+            for fixture in team_fixtures:
+                try:
+                    fixture_id = int(fixture["fixture"]["id"])
+                    local_api = str(fixture.get("teams", {}).get("home", {}).get("name", ""))
+                    visitante_api = str(fixture.get("teams", {}).get("away", {}).get("name", ""))
+                except (KeyError, TypeError, ValueError):
+                    continue
+                equipos_esperados = (
+                    _nombres_coinciden(local, local_api)
+                    and _nombres_coinciden(visitante, visitante_api)
+                ) or (
+                    _nombres_coinciden(local, visitante_api)
+                    and _nombres_coinciden(visitante, local_api)
+                )
+                if equipos_esperados:
+                    fixtures_by_id[fixture_id] = fixture
+        fixtures = list(fixtures_by_id.values())
         if not fixtures:
-            print("API-Football: no devolvió fixtures colombianos Primera A/B para {}".format(today.isoformat()))
+            print("API-Football: no encontró fixture de los equipos manuales para {}".format(today.isoformat()))
             return []
 
         fixture_ids = []
@@ -271,7 +281,11 @@ def obtener_partidos_primera_b_hoy() -> List[Dict[str, object]]:
 def _normalizar_nombre(nombre: str) -> List[str]:
     texto = unicodedata.normalize("NFKD", nombre.casefold())
     texto = "".join(caracter for caracter in texto if not unicodedata.combining(caracter))
-    return [token for token in re.findall(r"[a-z0-9]+", texto) if token not in {"fc", "cd", "club"}]
+    return [
+        token
+        for token in re.findall(r"[a-z0-9]+", texto)
+        if token not in {"fc", "cd", "club", "deportes"}
+    ]
 
 
 def _nombres_coinciden(nombre_manual: str, nombre_api: str) -> bool:

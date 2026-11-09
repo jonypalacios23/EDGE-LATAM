@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from api_football import buscar_resultado_partido, obtener_partidos_primera_b_hoy
+from api_football import buscar_resultado_partido, obtener_resultados_partidos_hoy
 from corners import analizar_corners
 from goles import analizar_goles
 from kelly import calcular_kelly
@@ -32,8 +32,13 @@ def obtener_partidos_hoy() -> Dict[str, object]:
         with ruta_partidos.open("r", encoding="utf-8") as archivo:
             datos = json.load(archivo)
         if isinstance(datos, dict) and isinstance(datos.get("partidos"), list):
+            pares_equipos = [
+                (str(partido.get("local", "")), str(partido.get("visitante", "")))
+                for partido in datos["partidos"]
+                if isinstance(partido, dict)
+            ]
             try:
-                resultados_api = obtener_partidos_primera_b_hoy()
+                resultados_api = obtener_resultados_partidos_hoy(pares_equipos)
             except Exception as error:
                 print("Error API:", error)
                 resultados_api = []
