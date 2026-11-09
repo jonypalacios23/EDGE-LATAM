@@ -4,9 +4,10 @@ import json
 import re
 import unicodedata
 from datetime import datetime
+from html.parser import HTMLParser
 from typing import Dict, List, Optional, Sequence, Tuple
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode, urlparse
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
@@ -171,6 +172,227 @@ def _fixture_names(event: Dict[str, object]) -> Optional[Tuple[str, str]]:
     return str(result["local"]), str(result["visitante"])
 
 
+STAT_ALIASES = {
+    "woncorners": "corners",
+    "corners": "corners",
+    "cornerkicks": "corners",
+    "yellowcards": "yellow_cards",
+    "redcards": "red_cards",
+    "shotsontarget": "shots_on_target",
+    "shotsongoal": "shots_on_target",
+}
+
+
+def _stat_value(value: object) -> Optional[int]:
+    if isinstance(value, dict):
+        for key in ("displayValue", "value", "total", "statValue"):
+            if key in value:
+                parsed = _as_score(value[key])
+                if parsed is not None:
+                    return parsed
+        return None
+    return _as_score(value)
+
+
+def _stats_from_tree(node: object) -> Dict[str, int]:
+    found: Dict[str, int] = {}
+    if isinstance(node, list):
+        for item in node:
+            found.update(_stats_from_tree(item))
+        return found
+    if not isinstance(node, dict):
+        return found
+
+    names = [node.get(key) for key in ("name", "label", "displayName", "abbreviation", "type")]
+    for name in names:
+        normalized = re.sub(r"[^a-z]", "", str(name or "").casefold())
+        target = STAT_ALIASES.get(normalized)
+        if target:
+            value = _stat_value(node)
+            if value is not None:
+                found[target] = value
+            break
+
+    for key, value in node.items():
+        normalized = re.sub(r"[^a-z]", "", str(key).casefold())
+        target = STAT_ALIASES.get(normalized)
+        if target:
+            parsed = _stat_value(value)
+            if parsed is not None:
+                found[target] = parsed
+        elif isinstance(value, (dict, list)):
+            found.update(_stats_from_tree(value))
+    return found
+
+
+def _statistics_from_summary(payload: Dict[str, object]) -> Dict[str, Optional[int]]:
+    boxscore = payload.get("boxscore", {})
+    teams = boxscore.get("teams", []) if isinstance(boxscore, dict) else []
+    if not isinstance(teams, list):
+        teams = []
+    per_team = [_stats_from_tree(team) for team in teams if isinstance(team, dict)]
+
+    if len(per_team) < 2:
+        # ESPN can place team aggregates in differently nested summary sections.
+        candidates = []
+        for section in (payload.get("team_stats"), payload.get("statistics"), payload.get("boxscore")):
+            if isinstance(section, list):
+                candidates.extend(_stats_from_tree(item) for item in section)
+            elif isinstance(section, dict):
+                nested = section.get("teams")
+                if isinstance(nested, list):
+                    candidates.extend(_stats_from_tree(item) for item in nested)
+        if len(candidates) >= 2:
+            per_team = candidates
+
+    result: Dict[str, Optional[int]] = {
+        "corners_total": None,
+        "tarjetas_total": None,
+        "tiros_a_puerta_total": None,
+    }
+    if len(per_team) >= 2:
+        first, second = per_team[0], per_team[1]
+        if "corners" in first and "corners" in second:
+            result["corners_total"] = first["corners"] + second["corners"]
+        card_keys = ("yellow_cards", "red_cards")
+        if all(key in team for team in per_team[:2] for key in card_keys):
+            result["tarjetas_total"] = sum(
+                team["yellow_cards"] + team["red_cards"] for team in per_team[:2]
+            )
+        if "shots_on_target" in first and "shots_on_target" in second:
+            result["tiros_a_puerta_total"] = first["shots_on_target"] + second["shots_on_target"]
+    return result
+
+
+class _GoogleResultsParser(HTMLParser):
+    """Extrae texto y enlaces de resultados orgánicos de Google sin evaluar anuncios."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.results: List[Dict[str, object]] = []
+        self._active = False
+        self._depth = 0
+        self._text: List[str] = []
+        self._links: List[str] = []
+
+    def handle_starttag(self, tag: str, attrs: List[Tuple[str, Optional[str]]]) -> None:
+        attributes = dict(attrs)
+        if tag == "div" and "MjjYud" in str(attributes.get("class", "")).split() and not self._active:
+            self._active = True
+            self._depth = 1
+            self._text = []
+            self._links = []
+        elif self._active and tag == "div":
+            self._depth += 1
+        if self._active and tag == "a" and attributes.get("href"):
+            self._links.append(str(attributes["href"]))
+
+    def handle_data(self, data: str) -> None:
+        if self._active:
+            self._text.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._active and tag == "div":
+            self._depth -= 1
+            if self._depth == 0:
+                self.results.append({"text": " ".join(self._text), "links": self._links[:]})
+                self._active = False
+
+
+def _buscar_totales_en_google(resultado: Dict[str, object]) -> Dict[str, int]:
+    local = str(resultado.get("local", ""))
+    visitante = str(resultado.get("visitante", ""))
+    fecha = datetime.now(ZoneInfo(COLOMBIA_TIMEZONE)).strftime("%Y-%m-%d")
+    query_text = (
+        '"{}" "{}" {} (corners OR "corner kicks" OR cards OR tarjetas) '
+        '(site:espn.com OR site:flashscore.com OR site:sofascore.com)'
+    ).format(local, visitante, fecha)
+    url = "https://www.google.com/search?" + urlencode({"q": query_text, "num": 10})
+    request = Request(
+        url,
+        headers={"Accept": "text/html", "User-Agent": "Mozilla/5.0 (compatible; EDGE-LATAM/1.0)"},
+    )
+    try:
+        with urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+            html = response.read().decode("utf-8", errors="replace")
+    except Exception as error:
+        print("Búsqueda web ESPN fallback sin respuesta para {} vs {}: {}".format(local, visitante, error))
+        return {}
+
+    parser = _GoogleResultsParser()
+    parser.feed(html)
+    aliases = {"espn.com", "flashscore.com", "sofascore.com"}
+    nombres = [_normalizar_nombre(local), _normalizar_nombre(visitante)]
+    patrones = {
+        "corners_total": re.compile(r"(?:total\s+(?:corner kicks|corners)|(?:corner kicks|corners)\s+total|c[oó]rners?\s+totales?)\s*[:\-]?\s*(\d+)", re.I),
+        "tarjetas_total": re.compile(r"(?:total\s+cards|cards\s+total|total\s+tarjetas|tarjetas\s+totales?)\s*[:\-]?\s*(\d+)", re.I),
+        "amarillas_total": re.compile(r"(?:total\s+yellow cards|yellow cards\s+total|total\s+tarjetas amarillas|tarjetas amarillas\s+totales?)\s*[:\-]?\s*(\d+)", re.I),
+        "rojas_total": re.compile(r"(?:total\s+red cards|red cards\s+total|total\s+tarjetas rojas|tarjetas rojas\s+totales?)\s*[:\-]?\s*(\d+)", re.I),
+    }
+    output: Dict[str, int] = {}
+    for item in parser.results:
+        text = str(item.get("text", ""))
+        normalized_text = _normalizar_nombre(text)
+        if not all(any(token in normalized_text for token in equipo) for equipo in nombres):
+            continue
+        hosts = []
+        for link in item.get("links", []):
+            parsed = urlparse(str(link))
+            if parsed.netloc.casefold().endswith("google.com") and parsed.path == "/url":
+                target = parse_qs(parsed.query).get("q", [""])[0]
+                parsed = urlparse(target)
+            host = parsed.netloc.casefold().removeprefix("www.")
+            if any(host == allowed or host.endswith("." + allowed) for allowed in aliases):
+                hosts.append(host)
+        if not hosts:
+            continue
+        for key, pattern in patrones.items():
+            match = pattern.search(text)
+            if match:
+                output[key] = int(match.group(1))
+    if output:
+        if "tarjetas_total" not in output and "amarillas_total" in output and "rojas_total" in output:
+            output["tarjetas_total"] = output["amarillas_total"] + output["rojas_total"]
+        output.pop("amarillas_total", None)
+        output.pop("rojas_total", None)
+        print("Búsqueda web encontró totales oficiales para {} vs {}: {}".format(local, visitante, output))
+    return output
+
+
+def _cargar_estadisticas_espn(resultado: Dict[str, object]) -> None:
+    evento_id = resultado.get("evento_id")
+    liga = str(resultado.get("liga_codigo", ""))
+    if not evento_id or liga not in LIGAS:
+        return
+    query = urlencode({"event": evento_id})
+    url = "{}/{}/summary?{}".format(API_BASE, liga, query)
+    try:
+        payload = _get_json(url)
+        estadisticas = _statistics_from_summary(payload)
+        faltantes = [
+            key for key, value in estadisticas.items()
+            if value is None and key in {"corners_total", "tarjetas_total"}
+        ]
+        if faltantes:
+            fallback = _buscar_totales_en_google(resultado)
+            for key in faltantes:
+                if key in fallback:
+                    estadisticas[key] = fallback[key]
+            if fallback:
+                resultado["fuente_estadisticas"] = "ESPN Summary + búsqueda web en fuente oficial"
+        resultado.update(estadisticas)
+        resultado["fuente_estadisticas"] = "ESPN Summary"
+        if not any(value is not None for value in estadisticas.values()):
+            resultado["error_estadisticas"] = "Esperando estadística oficial"
+            print("ESPN Summary sin estadísticas liquidables evento={}; queda PENDIENTE".format(evento_id))
+        elif estadisticas.get("corners_total") is None or estadisticas.get("tarjetas_total") is None:
+            resultado["error_estadisticas"] = "Esperando estadística oficial"
+            print("ESPN Summary incompleto evento={}; estadísticas faltantes quedan PENDIENTE".format(evento_id))
+    except Exception as error:
+        print("Error ESPN Summary evento={}: {}".format(evento_id, error))
+        resultado["error_estadisticas"] = "Esperando estadística oficial"
+
+
 def obtener_resultados_partidos_hoy(
     partidos: Sequence[Tuple[str, str, Optional[str]]],
 ) -> List[Dict[str, object]]:
@@ -213,7 +435,11 @@ def obtener_resultados_partidos_hoy(
                             json.dumps(event, ensure_ascii=False),
                         )
                     )
-    return list(resultados.values())
+    salida = list(resultados.values())
+    for resultado in salida:
+        if resultado.get("estado") in {"en_juego", "finalizado"}:
+            _cargar_estadisticas_espn(resultado)
+    return salida
 
 
 def buscar_resultado_partido(

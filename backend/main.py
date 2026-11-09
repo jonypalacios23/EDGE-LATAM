@@ -24,51 +24,112 @@ app.add_middleware(
 )
 
 
-def liquidar_pronostico(resultado: Optional[Dict[str, object]], pronostico: str) -> Dict[str, object]:
-    """Liquida el pronóstico 1X2 guardado cuando ESPN confirma el estado final."""
-    pronostico_normalizado = str(pronostico or "").strip().casefold()
+def liquidar_mercado(
+    resultado: Optional[Dict[str, object]],
+    mercado: Dict[str, object],
+) -> Dict[str, object]:
+    """Liquida un mercado contra su estadística real y la línea guardada."""
+    tipo = str(mercado.get("tipo", "")).strip().casefold()
+    direccion = str(mercado.get("direccion", "mas")).strip().casefold()
+    linea = mercado.get("linea")
+    nombre = {
+        "corners": "Córners",
+        "corner": "Córners",
+        "tarjetas": "Tarjetas",
+        "cards": "Tarjetas",
+        "goles": "Goles",
+        "goals": "Goles",
+        "tiros": "Tiros a puerta",
+        "tiros_a_puerta": "Tiros a puerta",
+        "shots_on_target": "Tiros a puerta",
+    }.get(tipo, tipo.title() or "Mercado")
+
+    def salida(estado: str, total: Optional[int] = None, detalle: Optional[str] = None) -> Dict[str, object]:
+        if estado == "ANULADO / REEMBOLSO":
+            if resultado and str(resultado.get("estado", "")).casefold() in {"suspendido", "cancelado"}:
+                texto = "Partido suspendido o cancelado - ANULADO / REEMBOLSO"
+            else:
+                texto = "Finalizado - {} reales: {} - Línea: {} = ANULADO / REEMBOLSO".format(nombre, total, linea)
+        elif estado == "PENDIENTE" and resultado and resultado.get("estado") == "finalizado":
+            texto = "Finalizado - Esperando estadística oficial"
+        elif estado == "PENDIENTE":
+            texto = "PENDIENTE"
+        elif estado == "GANADO" or estado == "PERDIDO":
+            texto = detalle or "Finalizado - {} reales: {} - Línea: {} {} = {}".format(
+                nombre,
+                total,
+                "Más de" if direccion in {"mas", "más", "over"} else "Menos de" if direccion in {"menos", "under"} else "",
+                linea,
+                estado,
+            )
+        else:
+            texto = detalle or estado
+        return {"estado": estado, "texto": texto, "total_real": total, "linea": linea, "tipo": tipo}
+
     if resultado is None:
-        return {"estado": "PENDIENTE", "pronostico": pronostico_normalizado}
+        return salida("PENDIENTE")
+    estado_partido = str(resultado.get("estado", "")).casefold()
+    if estado_partido in {"suspendido", "cancelado"}:
+        return salida("ANULADO / REEMBOLSO")
+    if estado_partido != "finalizado":
+        return salida("PENDIENTE")
 
-    estado = str(resultado.get("estado", "")).casefold()
-    if estado in {"suspendido", "cancelado"}:
-        return {
-            "estado": "ANULADO / REEMBOLSO",
-            "pronostico": pronostico_normalizado,
-            "marcador_local": resultado.get("marcador_local"),
-            "marcador_visitante": resultado.get("marcador_visitante"),
-        }
-    if estado != "finalizado":
-        return {
-            "estado": "PENDIENTE",
-            "pronostico": pronostico_normalizado,
-            "marcador_local": resultado.get("marcador_local"),
-            "marcador_visitante": resultado.get("marcador_visitante"),
-        }
+    if tipo in {"ganador", "1x2"}:
+        pronostico = str(mercado.get("pronostico", "")).strip().casefold()
+        local = resultado.get("marcador_local")
+        visitante = resultado.get("marcador_visitante")
+        if local is None or visitante is None or pronostico not in {"local", "empate", "visitante"}:
+            return salida("PENDIENTE")
+        real = "local" if local > visitante else "visitante" if local < visitante else "empate"
+        estado_apuesta = "GANADO" if real == pronostico else "PERDIDO"
+        return salida(
+            estado_apuesta,
+            detalle="Finalizado - Resultado real: {} - Pronóstico: {} = {}".format(real, pronostico, estado_apuesta),
+        )
+    if tipo in {"ambos_marcan", "both_teams_to_score", "btts"}:
+        local = resultado.get("marcador_local")
+        visitante = resultado.get("marcador_visitante")
+        if local is None or visitante is None:
+            return salida("PENDIENTE")
+        pronostico = str(mercado.get("pronostico", "si")).strip().casefold()
+        ambos = int(local) > 0 and int(visitante) > 0
+        acertado = ambos if pronostico in {"si", "yes", "ambos"} else not ambos
+        estado_apuesta = "GANADO" if acertado else "PERDIDO"
+        return salida(
+            estado_apuesta,
+            detalle="Finalizado - Ambos marcan: {} - Pronóstico: {} = {}".format("Sí" if ambos else "No", pronostico, estado_apuesta),
+        )
 
-    if pronostico_normalizado not in {"local", "empate", "visitante"}:
-        return {"estado": "PRONÓSTICO NO CONFIGURADO", "pronostico": pronostico_normalizado}
-
-    goles_local = resultado.get("marcador_local")
-    goles_visitante = resultado.get("marcador_visitante")
-    if goles_local is None or goles_visitante is None:
-        return {"estado": "RESULTADO NO DISPONIBLE", "pronostico": pronostico_normalizado}
-    goles_local = int(goles_local)
-    goles_visitante = int(goles_visitante)
-    if goles_local > goles_visitante:
-        resultado_real = "local"
-    elif goles_local < goles_visitante:
-        resultado_real = "visitante"
-    else:
-        resultado_real = "empate"
-    estado_liquidacion = "GANADO" if pronostico_normalizado == resultado_real else "PERDIDO"
-    return {
-        "estado": estado_liquidacion,
-        "pronostico": pronostico_normalizado,
-        "resultado_real": resultado_real,
-        "marcador_local": goles_local,
-        "marcador_visitante": goles_visitante,
+    resultado_por_tipo = {
+        "corners": "corners_total",
+        "corner": "corners_total",
+        "tarjetas": "tarjetas_total",
+        "cards": "tarjetas_total",
+        "goles": "goles_total",
+        "goals": "goles_total",
+        "tiros": "tiros_a_puerta_total",
+        "tiros_a_puerta": "tiros_a_puerta_total",
+        "shots_on_target": "tiros_a_puerta_total",
     }
+    clave = resultado_por_tipo.get(tipo)
+    total = resultado.get(clave) if clave else None
+    if total is None or linea is None:
+        return salida("PENDIENTE")
+    try:
+        total_real = float(total)
+        linea_real = float(linea)
+    except (TypeError, ValueError):
+        return salida("PENDIENTE")
+
+    if direccion in {"mas", "over", "más"}:
+        estado_apuesta = "GANADO" if total_real > linea_real else "PERDIDO" if total_real < linea_real else "ANULADO / REEMBOLSO"
+    elif direccion in {"menos", "under"}:
+        estado_apuesta = "GANADO" if total_real < linea_real else "PERDIDO" if total_real > linea_real else "ANULADO / REEMBOLSO"
+    else:
+        return salida("PENDIENTE", detalle="Tipo de línea no reconocido")
+    if estado_apuesta == "ANULADO / REEMBOLSO":
+        return salida(estado_apuesta, int(total_real))
+    return salida(estado_apuesta, int(total_real))
 
 
 @app.get("/api/partidos")
@@ -123,10 +184,13 @@ def obtener_partidos_hoy(
                         )
                     partido["resultado_real"] = resultado_real
                     partido["datos_en_vivo"] = resultado_real is not None
-                    partido["liquidacion"] = liquidar_pronostico(
-                        resultado_real,
-                        str(partido.get("pronostico_resultado", "")),
-                    )
+                    liquidaciones = {}
+                    mercados = partido.get("mercados", {})
+                    if isinstance(mercados, dict):
+                        for clave_mercado, datos_mercado in mercados.items():
+                            if isinstance(datos_mercado, dict):
+                                liquidaciones[clave_mercado] = liquidar_mercado(resultado_real, datos_mercado)
+                    partido["liquidaciones"] = liquidaciones
             datos["error_api"] = error_api
             datos["tiene_datos_en_vivo"] = any(
                 isinstance(partido, dict) and partido.get("datos_en_vivo")
