@@ -280,6 +280,8 @@ def obtener_partidos_api() -> Dict[str, object]:
         )
         datos["total_picks_valor"] = sum(1 for pick in datos["picks_valor"] if pick.get("tiene_valor"))
         datos["total_mercados_analizados"] = sum(len(partido.get("picks_valor", [])) for partido in partidos if not partido.get("es_finalizado"))
+        datos["total_mercados_sin_valor"] = sum(1 for pick in datos["picks_valor"] if not pick.get("tiene_valor"))
+        datos["total_mercados_confianza_baja"] = sum(1 for pick in datos["picks_valor"] if pick.get("confianza") == "Baja")
         datos["total_partidos_analizados"] = len(partidos)
         return datos
     except (OSError, UnicodeError, json.JSONDecodeError):

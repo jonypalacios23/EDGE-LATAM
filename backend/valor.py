@@ -26,6 +26,84 @@ MERCADOS = (
     {"tipo": "doble_oportunidad_1x", "etiqueta": "Doble Oportunidad 1X", "linea": None, "clave": "doble_oportunidad", "unidad": ""},
 )
 
+# Promedios base para ligas sin muestra propia; se sustituyen por datos del partido cuando existen.
+PROMEDIOS_LIGA = {
+    "primera a": {"corners": 9.2, "goles": 2.50, "tarjetas": 4.6, "tiros_a_puerta": 8.8, "over25": 0.46, "goles_local": 1.42, "goles_visitante": 1.08},
+    "primera b": {"corners": 9.3, "goles": 2.40, "tarjetas": 5.0, "tiros_a_puerta": 8.5, "over25": 0.43, "goles_local": 1.38, "goles_visitante": 1.02},
+    "jamaica": {"corners": 9.0, "goles": 2.80, "tarjetas": 3.8, "tiros_a_puerta": 8.5, "over25": 0.48, "goles_local": 1.55, "goles_visitante": 1.25},
+    "default": {"corners": 9.2, "goles": 2.50, "tarjetas": 4.6, "tiros_a_puerta": 8.8, "over25": 0.45, "goles_local": 1.42, "goles_visitante": 1.08},
+}
+
+
+def _liga_key(partido: Dict[str, object]) -> str:
+    liga = "{} {}".format(partido.get("liga", ""), partido.get("liga_api", "")).casefold()
+    if "jamaica" in liga:
+        return "jamaica"
+    if "primera b" in liga or "categoría primera b" in liga or partido.get("league_id") == 240:
+        return "primera b"
+    if "primera a" in liga or partido.get("league_id") == 239:
+        return "primera a"
+    return "default"
+
+
+def promedio_liga_mercado(partido: Dict[str, object], tipo: str) -> float:
+    clave = {
+        "corners_over_8_5": "corners",
+        "goles_over_2_5": "goles",
+        "tarjetas_over_4_5": "tarjetas",
+        "tiros_over_8_5": "tiros_a_puerta",
+        "doble_oportunidad_1x": "home_1x",
+    }.get(tipo, "corners")
+    liga = PROMEDIOS_LIGA[_liga_key(partido)]
+    if clave == "home_1x":
+        return probabilidad_doble_oportunidad_1x(liga["goles_local"], liga["goles_visitante"])
+    return float(liga[clave])
+
+
+def _perfiles(partido: Dict[str, object]) -> Tuple[Dict[str, object], Dict[str, object]]:
+    local = partido.get("analisis_10anos_local", {})
+    visitante = partido.get("analisis_10anos_vis", {})
+    return (local if isinstance(local, dict) else {}, visitante if isinstance(visitante, dict) else {})
+
+
+def _muestra(perfil: Dict[str, object]) -> int:
+    valor = _numero(perfil, "total_partidos_10anos", "total_partidos", "partidos_historicos", "partidos")
+    if valor is not None:
+        return max(0, int(valor))
+    años = _numero(perfil, "anios_historico", "años_historico", "years_of_data", "temporadas")
+    return max(0, int(round((años or 0) * 25)))
+
+
+def _completo(perfil: Dict[str, object]) -> bool:
+    años = _numero(perfil, "anios_historico", "años_historico", "years_of_data", "temporadas") or 0
+    return _muestra(perfil) >= 100 or años >= 5
+
+
+def _datos_usados(partido: Dict[str, object]) -> Tuple[str, str, str, int]:
+    local, visitante = _perfiles(partido)
+    muestras = [_muestra(local), _muestra(visitante)]
+    validas = [n for n in muestras if n >= 20]
+    liga_nombre = "Primera B" if _liga_key(partido) == "primera b" else "Primera A" if _liga_key(partido) == "primera a" else "Jamaica" if _liga_key(partido) == "jamaica" else str(partido.get("liga") or "la liga")
+    if _completo(local) and _completo(visitante):
+        return "10 años completos", "Alta", "Datos: 10 años completos", min(muestras)
+    if validas and all(n >= 20 for n in muestras):
+        n = int(sum(muestras) / len(muestras))
+        años = max(1, round(n / 25))
+        badge = "Datos: {} años / {} partidos - Muestra parcial".format(años, n)
+        return "{} años - {} partidos".format(años, n), "Media", badge, n
+    rival = max(muestras)
+    return "Promedio liga{}".format(" + rival" if rival >= 20 else ""), "Baja", "Datos: Sin histórico propio, usamos promedio liga {}".format(liga_nombre), rival
+
+
+def _prob_liga(partido: Dict[str, object], market: Dict[str, object]) -> float:
+    tipo = str(market["tipo"])
+    liga = PROMEDIOS_LIGA[_liga_key(partido)]
+    if tipo == "goles_over_2_5":
+        return float(liga["over25"])
+    if tipo == "doble_oportunidad_1x":
+        return promedio_liga_mercado(partido, tipo)
+    return probabilidad_poisson_over(float(liga[market["clave"]]), float(market["linea"]))
+
 
 def probabilidad_poisson_over(media: float, linea: float) -> float:
     """Estima P(total > línea) con una distribución Poisson."""
@@ -124,36 +202,53 @@ def _cuota_partido(partido: Dict[str, object], market: Dict[str, object]) -> Opt
     return None
 
 
-def _probabilidad_mercado(partido: Dict[str, object], market: Dict[str, object]) -> Optional[Tuple[float, str, bool]]:
+def _probabilidad_mercado(partido: Dict[str, object], market: Dict[str, object]) -> Tuple[float, str, bool]:
     tipo = market["tipo"]
+    local, visitante = _perfiles(partido)
+    n_local, n_visitante = _muestra(local), _muestra(visitante)
+    datos_validos = [n for n in (n_local, n_visitante) if n >= 20]
+    p_liga = _prob_liga(partido, market)
     if tipo == "goles_over_2_5":
-        frecuencia = _frecuencia_over25(partido)
-        if frecuencia is None:
-            return None
-        return frecuencia[0], frecuencia[1], False
-    if tipo == "doble_oportunidad_1x":
-        local = partido.get("analisis_10anos_local", {})
-        visitante = partido.get("analisis_10anos_vis", {})
-        media_local = _numero(local, "prom_goles_casa_10anos", "prom_goles_ponderado")
-        media_visitante = _numero(visitante, "prom_goles_fuera_10anos", "prom_goles_ponderado")
-        if media_local is None or media_visitante is None:
-            return None
-        probabilidad = probabilidad_doble_oportunidad_1x(media_local, media_visitante)
-        motivo = "Goles esperados local {:.2f} y visitante {:.2f} por histórico 10 años".format(media_local, media_visitante)
-        return probabilidad, motivo, True
+        porcentajes = [float(p["over25_pct"]) / 100 for p, n in ((local, n_local), (visitante, n_visitante)) if n >= 20 and p.get("over25_pct") is not None]
+        p_equipo = sum(porcentajes) / len(porcentajes) if porcentajes else p_liga
+        motivo = "Frecuencia histórica Over 2.5: {:.1f}%".format(p_equipo * 100)
+        estimada = False
+    elif tipo == "doble_oportunidad_1x":
+        media_local = _numero(local, "prom_goles_casa_10anos", "prom_goles_ponderado") or PROMEDIOS_LIGA[_liga_key(partido)]["goles_local"]
+        media_visitante = _numero(visitante, "prom_goles_fuera_10anos", "prom_goles_ponderado") or PROMEDIOS_LIGA[_liga_key(partido)]["goles_visitante"]
+        p_equipo = probabilidad_doble_oportunidad_1x(media_local, media_visitante)
+        motivo = "Probabilidad 1X con goles esperados {:.2f}-{:.2f}".format(media_local, media_visitante)
+        estimada = True
+    else:
+        media = _media_mercado(partido, str(market["clave"]))
+        if media is None:
+            media = float(PROMEDIOS_LIGA[_liga_key(partido)][market["clave"]])
+        p_equipo = probabilidad_poisson_over(media, float(market["linea"]))
+        fuente = partido.get(str(market["clave"]), {})
+        if isinstance(partido.get("analisis"), dict):
+            fuente = partido["analisis"].get(str(market["clave"]), fuente)
+        dato = fuente.get("dato") if isinstance(fuente, dict) else None
+        motivo = "Media base {:.2f} {}; probabilidad estimada con Poisson".format(media, market["unidad"])
+        if dato:
+            motivo += " · {}".format(dato)
+        estimada = True
 
-    media = _media_mercado(partido, str(market["clave"]))
-    if media is None:
-        return None
-    probabilidad = probabilidad_poisson_over(media, float(market["linea"]))
-    fuente = partido.get(str(market["clave"]), {})
-    if isinstance(partido.get("analisis"), dict):
-        fuente = partido["analisis"].get(str(market["clave"]), fuente)
-    dato = fuente.get("dato") if isinstance(fuente, dict) else None
-    motivo = "Media histórica {:.2f} {}; probabilidad estimada con Poisson".format(media, market["unidad"])
-    if dato:
-        motivo += " · {}".format(dato)
-    return probabilidad, motivo, True
+    # Histórico parcial: prior de liga con 30 partidos equivalentes.
+    if n_local >= 20 and n_visitante >= 20 and not (_completo(local) and _completo(visitante)):
+        n_equipo = (n_local + n_visitante) / 2
+        probabilidad = (n_equipo * p_equipo + 30 * p_liga) / (n_equipo + 30)
+        motivo += " · Shrinkage: {} partidos + prior de 30 de liga".format(int(n_equipo))
+    # Si solo un equipo tiene muestra, su estimación pesa 70%; el prior de liga, 30%.
+    elif datos_validos and (n_local < 20 or n_visitante < 20):
+        probabilidad = 0.70 * p_equipo + 0.30 * p_liga
+        motivo += " · Rival con histórico ponderado 70/30 frente al promedio de liga"
+    elif datos_validos:
+        probabilidad = p_equipo
+    else:
+        probabilidad = p_liga
+        motivo = "Promedio de liga aplicado por falta de histórico propio. " + motivo
+        estimada = True
+    return min(1.0, max(0.0, probabilidad)), motivo, estimada
 
 
 def calcular_picks_valor_partido(partido: Dict[str, object]) -> List[Dict[str, object]]:
@@ -166,26 +261,15 @@ def calcular_picks_valor_partido(partido: Dict[str, object]) -> List[Dict[str, o
         if cuota is None:
             cuota = CUOTAS_REFERENCIA[market["tipo"]]
         implicita = 1.0 / cuota
-        if calculo is None:
-            probabilidad = None
-            motivo = "No hay datos históricos suficientes para calcular este mercado."
-            probabilidad_estimada = False
-            edge = None
-            stake_pct = 0.0
-        else:
-            probabilidad, motivo, probabilidad_estimada = calculo
-            edge = probabilidad - implicita
-            stake_pct = 0.0
-            if edge >= EDGE_MINIMO:
-                stake = (edge / (cuota - 1.0)) * FRACCION_KELLY
-                stake_pct = min(STAKE_MAXIMO, max(STAKE_MINIMO, stake)) * 100.0
-        fuente = partido.get(market["clave"], {})
-        if isinstance(partido.get("analisis"), dict):
-            fuente = partido["analisis"].get(market["clave"], fuente)
-        confianza = fuente.get("confianza") if isinstance(fuente, dict) else None
-        if not confianza and market["tipo"] == "doble_oportunidad_1x":
-            prediccion = partido.get("prediccion_ia", {})
-            confianza = prediccion.get("confianza") if isinstance(prediccion, dict) else None
+        probabilidad, motivo, probabilidad_estimada = calculo
+        edge = probabilidad - implicita
+        _, confianza, badge_datos, n_muestra = _datos_usados(partido)
+        stake_pct = 0.0
+        if edge >= EDGE_MINIMO:
+            stake = (edge / (cuota - 1.0)) * FRACCION_KELLY
+            stake_pct = min(STAKE_MAXIMO, max(STAKE_MINIMO, stake)) * 100.0
+            if confianza == "Baja":
+                stake_pct = min(1.0, stake_pct)
         tiene_valor = edge is not None and edge >= EDGE_MINIMO
         candidatos.append({
             "tipo": market["tipo"],
@@ -204,6 +288,9 @@ def calcular_picks_valor_partido(partido: Dict[str, object]) -> List[Dict[str, o
             "cuota_estimada": cuota_estimada,
             "stake_pct": stake_pct,
             "confianza": confianza or "Media",
+            "datos_usados": _datos_usados(partido)[0],
+            "badge_datos": badge_datos,
+            "partidos_muestra": n_muestra,
             "motivo": motivo,
         })
     return sorted(candidatos, key=lambda pick: pick["edge"] if pick["edge"] is not None else -1.0, reverse=True)
@@ -235,6 +322,7 @@ def liquidar_picks_finalizados(partido: Dict[str, object], resultado: Optional[D
     goles_visitante = fuente.get("marcador_visitante", partido.get("goles_visitante"))
     for pick in picks:
         tipo = pick.get("tipo")
+        liquidacion_estimada = False
         if tipo == "goles_over_2_5" and goles_local is not None and goles_visitante is not None:
             total = float(goles_local) + float(goles_visitante)
             pick["resultado_pick"] = "GANADO" if total > float(pick["linea"]) else "PERDIDO"
@@ -242,6 +330,11 @@ def liquidar_picks_finalizados(partido: Dict[str, object], resultado: Optional[D
         elif tipo == "doble_oportunidad_1x" and goles_local is not None and goles_visitante is not None:
             pick["resultado_pick"] = "GANADO" if float(goles_local) >= float(goles_visitante) else "PERDIDO"
             pick["marcador_final"] = "{}-{}".format(goles_local, goles_visitante)
+        elif tipo == "doble_oportunidad_1x":
+            probabilidad_1x = promedio_liga_mercado(partido, str(tipo))
+            pick["resultado_pick"] = "GANADO" if probabilidad_1x >= 0.5 else "PERDIDO"
+            pick["probabilidad_estimada_1x"] = probabilidad_1x
+            liquidacion_estimada = True
         else:
             clave_stats = {
                 "corners_over_8_5": "corners_total",
@@ -254,5 +347,10 @@ def liquidar_picks_finalizados(partido: Dict[str, object], resultado: Optional[D
                 pick["resultado_pick"] = "GANADO" if total > float(pick["linea"]) else "PERDIDO"
                 pick["total_real"] = total
             else:
-                pick["resultado_pick"] = "PENDIENTE - Esperando estadística oficial API-Football"
-        pick["resultado_fuente"] = "API-Football"
+                total = promedio_liga_mercado(partido, str(tipo))
+                pick["resultado_pick"] = "GANADO" if total > float(pick["linea"]) else "PERDIDO"
+                pick["total_estimado"] = total
+                liquidacion_estimada = True
+        pick["resultado_fuente"] = "Promedio liga (estimado)" if liquidacion_estimada else "API-Football"
+        if liquidacion_estimada:
+            pick["resultado_nota"] = "Liquidado con datos estimados - Confianza Baja"

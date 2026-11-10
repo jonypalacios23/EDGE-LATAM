@@ -665,6 +665,10 @@
             `Confianza: ${pick.confianza || "Media"}`;
           tarjeta.appendChild(stake);
 
+          const datosUsados = document.createElement("p");
+          datosUsados.textContent = `Datos usados: ${pick.badge_datos || pick.datos_usados || "Promedio liga"}`;
+          tarjeta.appendChild(datosUsados);
+
           const motivo = document.createElement("details");
           motivo.className = "pick-detalle";
           const motivoTitulo = document.createElement("summary");
@@ -698,10 +702,17 @@
             }
             picks.forEach((pick) => {
               const resultadoPick = document.createElement("p");
-              const estadoPick = pick.resultado_pick || "PENDIENTE - Esperando estadística oficial";
+              const estadoPick = pick.resultado_pick || "Liquidado con estimación de liga";
               const icono = estadoPick === "GANADO" ? "✅" : estadoPick === "PERDIDO" ? "❌" : "⏳";
-              resultadoPick.textContent = `${icono} ${pick.mercado}: ${estadoPick}`;
+              const total = pick.total_real != null ? pick.total_real : pick.total_estimado;
+              const valorTotal = total == null ? "" : ` · ${pick.resultado_fuente || "Estimado"}: ${Number(total).toFixed(1)}`;
+              const linea = pick.linea == null ? "" : ` · Línea ${pick.linea}`;
+              const nota = pick.resultado_nota ? ` · ${pick.resultado_nota}` : "";
+              resultadoPick.textContent = `${icono} ${pick.mercado}${valorTotal}${linea} = ${estadoPick}${nota}`;
               tarjeta.appendChild(resultadoPick);
+              const calidad = document.createElement("p");
+              calidad.textContent = `Datos usados: ${pick.badge_datos || pick.datos_usados || "Promedio liga"} · Confianza: ${pick.confianza || "Baja"}`;
+              tarjeta.appendChild(calidad);
             });
             if (!picks.length && !partido.resultado_prediccion) {
               const pendiente = document.createElement("p");
