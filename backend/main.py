@@ -9,14 +9,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 if __package__:
-    from .api_football import buscar_resultado_partido, obtener_resultados_partidos
+    from .api_football import buscar_resultado_por_ids, obtener_resultados_partidos
     from .corners import analizar_corners
     from .goles import analizar_goles
     from .kelly import calcular_kelly
     from .tarjetas import analizar_tarjetas
     from .tiros import analizar_tiros
 else:
-    from api_football import buscar_resultado_partido, obtener_resultados_partidos
+    from api_football import buscar_resultado_por_ids, obtener_resultados_partidos
     from corners import analizar_corners
     from goles import analizar_goles
     from kelly import calcular_kelly
@@ -155,9 +155,9 @@ def obtener_partidos_hoy(
                 error_api = True
             for partido in datos["partidos"]:
                 if isinstance(partido, dict):
-                    resultado_real = buscar_resultado_partido(
-                        str(partido.get("local", "")),
-                        str(partido.get("visitante", "")),
+                    resultado_real = buscar_resultado_por_ids(
+                        partido.get("local_id"),
+                        partido.get("visitante_id"),
                         resultados_api,
                     )
                     if resultados_api and resultado_real is None:

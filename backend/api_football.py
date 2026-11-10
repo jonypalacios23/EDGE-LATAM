@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
-import unicodedata
 from datetime import date
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
@@ -81,28 +79,6 @@ def _get_json_original(path: str, params: Dict[str, object]) -> Dict[str, object
     return payload
 
 
-def _normalizar(texto: str) -> List[str]:
-    normal = unicodedata.normalize("NFKD", texto.casefold())
-    normal = "".join(char for char in normal if not unicodedata.combining(char))
-    return [token for token in re.findall(r"[a-z0-9]+", normal) if token not in {"deportes", "club", "fc", "cd"}]
-
-
-def _coincide(nombre_manual: str, nombre_api: str) -> bool:
-    manual = set(_normalizar(nombre_manual))
-    api = set(_normalizar(nombre_api))
-    if not manual or not api:
-        return False
-    if manual == api or manual < api or api < manual:
-        return True
-    # Alianza cambio de nombre: Valledupar = Petrolera = FC
-    if "alianza" in manual and "alianza" in api:
-        return True
-    # Comparten token distintivo de 5+ letras
-    comun = manual & api
-    for tok in comun:
-        if len(tok) >= 5:
-            return True
-    return False
 def _stat_value(statistics: object, stat_type: str, none_is_zero: bool = False) -> Optional[int]:
     if not isinstance(statistics, list):
         return None
@@ -204,6 +180,8 @@ def _fixture_to_result(fixture_row: Dict[str, object]) -> Optional[Dict[str, obj
         "fixture_id": fixture.get("id"),
         "local": str(home.get("name", "")),
         "visitante": str(away.get("name", "")),
+        "local_id": home.get("id"),
+        "visitante_id": away.get("id"),
         "liga": str(league.get("name", "Colombia Primera A")) if isinstance(league, dict) else "Colombia Primera A",
         "estado": state,
         "estado_corto": short,
@@ -232,61 +210,68 @@ def _fixture_to_result(fixture_row: Dict[str, object]) -> Optional[Dict[str, obj
 
 
 def obtener_resultados_partidos(partidos: Sequence[Dict[str, object]]) -> List[Dict[str, object]]:
-    """Fetch fixtures and their stats from API-Football for the configured season."""
-    fechas = sorted({str(partido.get("fecha", "")) for partido in partidos if partido.get("fecha")})
+    """Fetch each requested fixture by team IDs and its calendar date."""
     results: List[Dict[str, object]] = []
-    for fecha in fechas:
+    fixture_ids = set()
+    requests_cache: Dict[tuple, List[object]] = {}
+    for partido in partidos:
+        fecha = str(partido.get("fecha", "")).split("T", 1)[0]
+        local_id = partido.get("local_id")
+        visitante_id = partido.get("visitante_id")
+        if not fecha or local_id is None or visitante_id is None:
+            continue
         try:
             date.fromisoformat(fecha)
         except ValueError:
             print("Fecha de partido inválida para API-Football: {!r}".format(fecha))
             continue
-        try:
-            payload = _get_json("fixtures", {"league": LEAGUE_ID, "season": SEASON, "date": fecha})
-            fixtures = payload.get("response", [])
-            if not isinstance(fixtures, list):
+        requested_ids = {str(local_id), str(visitante_id)}
+        fixture_rows = []
+        for team_id in requested_ids:
+            cache_key = (team_id, fecha)
+            if cache_key not in requests_cache:
+                try:
+                    payload = _get_json("fixtures", {"team": team_id, "date": fecha})
+                    response = payload.get("response", [])
+                    requests_cache[cache_key] = response if isinstance(response, list) else []
+                except Exception as error:
+                    print("Error API-Football fixtures team={} date={}: {}".format(team_id, fecha, error))
+                    raise
+            fixture_rows.extend(requests_cache[cache_key])
+
+        seen_rows = set()
+        for row in fixture_rows:
+            if not isinstance(row, dict):
                 continue
-            for row in fixtures:
-                teams = row.get("teams", {}) if isinstance(row, dict) else {}
-                home = teams.get("home", {}) if isinstance(teams, dict) else {}
-                away = teams.get("away", {}) if isinstance(teams, dict) else {}
-                if not isinstance(home, dict) or not isinstance(away, dict):
-                    continue
-                requested = any(
-                    (
-                        _coincide(str(partido.get("local", "")), str(home.get("name", "")))
-                        and _coincide(str(partido.get("visitante", "")), str(away.get("name", "")))
-                    )
-                    or (
-                        _coincide(str(partido.get("local", "")), str(away.get("name", "")))
-                        and _coincide(str(partido.get("visitante", "")), str(home.get("name", "")))
-                    )
-                    for partido in partidos
-                    if str(partido.get("fecha", "")) == fecha
-                )
-                if requested and isinstance(row, dict):
-                    result = _fixture_to_result(row)
-                    if result is not None:
-                        results.append(result)
-        except Exception as error:
-            print("Error API-Football fixtures league={} season={} date={}: {}".format(LEAGUE_ID, SEASON, fecha, error))
-            raise
+            fixture = row.get("fixture", {})
+            teams = row.get("teams", {})
+            home = teams.get("home", {}) if isinstance(teams, dict) else {}
+            away = teams.get("away", {}) if isinstance(teams, dict) else {}
+            if not isinstance(home, dict) or not isinstance(away, dict):
+                continue
+            if {str(home.get("id")), str(away.get("id"))} != requested_ids:
+                continue
+            fixture_id = fixture.get("id") if isinstance(fixture, dict) else None
+            if fixture_id in fixture_ids or fixture_id in seen_rows:
+                continue
+            result = _fixture_to_result(row)
+            if result is not None:
+                results.append(result)
+                seen_rows.add(fixture_id)
+                fixture_ids.add(fixture_id)
     return results
 
 
-def buscar_resultado_partido(
-    local: str,
-    visitante: str,
+def buscar_resultado_por_ids(
+    local_id: object,
+    visitante_id: object,
     resultados: Sequence[Dict[str, object]],
 ) -> Optional[Dict[str, object]]:
+    """Match an API result using team IDs only; display names are not identifiers."""
+    requested_ids = {str(local_id), str(visitante_id)}
     for result in resultados:
-        same_order = _coincide(local, str(result.get("local", ""))) and _coincide(
-            visitante, str(result.get("visitante", ""))
-        )
-        reverse_order = _coincide(local, str(result.get("visitante", ""))) and _coincide(
-            visitante, str(result.get("local", ""))
-        )
-        if same_order or reverse_order:
+        result_ids = {str(result.get("local_id", "")), str(result.get("visitante_id", ""))}
+        if result_ids == requested_ids:
             return result
     return None
 
