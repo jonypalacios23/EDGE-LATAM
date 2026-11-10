@@ -8,9 +8,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from api_espn import buscar_resultado_partido, obtener_resultados_partidos_hoy
+from api_football import buscar_resultado_partido, obtener_resultados_partidos
 from corners import analizar_corners
-from google_stats import buscar_estadistica_google
 from goles import analizar_goles
 from kelly import calcular_kelly
 from tarjetas import analizar_tarjetas
@@ -29,7 +28,7 @@ def liquidar_mercado(
     resultado: Optional[Dict[str, object]],
     mercado: Dict[str, object],
 ) -> Dict[str, object]:
-    """Liquida un mercado contra su estadística real y la línea guardada."""
+    """Liquida un mercado solo con estadísticas de API-Football."""
     tipo = str(mercado.get("tipo", "")).strip().casefold()
     direccion = str(mercado.get("direccion", "mas")).strip().casefold()
     linea = mercado.get("linea")
@@ -52,7 +51,7 @@ def liquidar_mercado(
             else:
                 texto = "Finalizado - {} reales: {} - Línea: {} = ANULADO / REEMBOLSO".format(nombre, total, linea)
         elif estado == "PENDIENTE" and resultado and resultado.get("estado") == "finalizado":
-            texto = "PENDIENTE - Buscando en Google..."
+            texto = "Esperando estadística oficial API-Football"
         elif estado == "PENDIENTE":
             texto = "PENDIENTE"
         elif estado == "GANADO" or estado == "PERDIDO":
@@ -65,7 +64,14 @@ def liquidar_mercado(
             )
         else:
             texto = detalle or estado
-        return {"estado": estado, "texto": texto, "total_real": total, "linea": linea, "tipo": tipo}
+        return {
+            "estado": estado,
+            "texto": texto,
+            "total_real": total,
+            "linea": linea,
+            "tipo": tipo,
+            "fuente": "API-Football",
+        }
 
     if resultado is None:
         return salida("PENDIENTE")
@@ -75,39 +81,11 @@ def liquidar_mercado(
     if estado_partido != "finalizado":
         return salida("PENDIENTE")
 
-    if tipo in {"ganador", "1x2"}:
-        pronostico = str(mercado.get("pronostico", "")).strip().casefold()
-        local = resultado.get("marcador_local")
-        visitante = resultado.get("marcador_visitante")
-        if local is None or visitante is None or pronostico not in {"local", "empate", "visitante"}:
-            return salida("PENDIENTE")
-        real = "local" if local > visitante else "visitante" if local < visitante else "empate"
-        estado_apuesta = "GANADO" if real == pronostico else "PERDIDO"
-        return salida(
-            estado_apuesta,
-            detalle="Finalizado - Resultado real: {} - Pronóstico: {} = {}".format(real, pronostico, estado_apuesta),
-        )
-    if tipo in {"ambos_marcan", "both_teams_to_score", "btts"}:
-        local = resultado.get("marcador_local")
-        visitante = resultado.get("marcador_visitante")
-        if local is None or visitante is None:
-            return salida("PENDIENTE")
-        pronostico = str(mercado.get("pronostico", "si")).strip().casefold()
-        ambos = int(local) > 0 and int(visitante) > 0
-        acertado = ambos if pronostico in {"si", "yes", "ambos"} else not ambos
-        estado_apuesta = "GANADO" if acertado else "PERDIDO"
-        return salida(
-            estado_apuesta,
-            detalle="Finalizado - Ambos marcan: {} - Pronóstico: {} = {}".format("Sí" if ambos else "No", pronostico, estado_apuesta),
-        )
-
     resultado_por_tipo = {
         "corners": "corners_total",
         "corner": "corners_total",
         "tarjetas": "tarjetas_total",
         "cards": "tarjetas_total",
-        "goles": "goles_total",
-        "goals": "goles_total",
         "tiros": "tiros_a_puerta_total",
         "tiros_a_puerta": "tiros_a_puerta_total",
         "shots_on_target": "tiros_a_puerta_total",
@@ -128,9 +106,16 @@ def liquidar_mercado(
         estado_apuesta = "GANADO" if total_real < linea_real else "PERDIDO" if total_real > linea_real else "ANULADO / REEMBOLSO"
     else:
         return salida("PENDIENTE", detalle="Tipo de línea no reconocido")
+    label = {"corners": "córners", "corner": "córners", "tarjetas": "tarjetas", "cards": "tarjetas", "tiros": "tiros a puerta", "tiros_a_puerta": "tiros a puerta", "shots_on_target": "tiros a puerta"}.get(tipo, nombre.casefold())
     if estado_apuesta == "ANULADO / REEMBOLSO":
         return salida(estado_apuesta, int(total_real))
-    return salida(estado_apuesta, int(total_real))
+    return salida(
+        estado_apuesta,
+        int(total_real),
+        detalle="Fuente: API-Football - {} {} - Línea {} = {}".format(
+            int(total_real), label, linea, estado_apuesta
+        ),
+    )
 
 
 @app.get("/api/partidos")
@@ -152,18 +137,10 @@ def obtener_partidos_hoy(
                     and str(partido.get("local", "")).casefold() == local.casefold()
                     and str(partido.get("visitante", "")).casefold() == visitante.casefold()
                 ]
-            pares_equipos = [
-                (
-                    str(partido.get("local", "")),
-                    str(partido.get("visitante", "")),
-                    str(partido.get("liga", "")) or None,
-                )
-                for partido in datos["partidos"]
-                if isinstance(partido, dict)
-            ]
             error_api = False
             try:
-                resultados_api = obtener_resultados_partidos_hoy(pares_equipos)
+                partidos_api = [partido for partido in datos["partidos"] if isinstance(partido, dict)]
+                resultados_api = obtener_resultados_partidos(partidos_api)
                 error_api = False
             except Exception as error:
                 print("Error API:", error)
@@ -178,7 +155,7 @@ def obtener_partidos_hoy(
                     )
                     if resultados_api and resultado_real is None:
                         print(
-                            "ESPN: sin coincidencia para {} vs {}".format(
+                            "API-Football: sin coincidencia para {} vs {}".format(
                                 partido.get("local", ""),
                                 partido.get("visitante", ""),
                             )
@@ -191,43 +168,6 @@ def obtener_partidos_hoy(
                         for clave_mercado, datos_mercado in mercados.items():
                             if isinstance(datos_mercado, dict):
                                 liquidacion = liquidar_mercado(resultado_real, datos_mercado)
-                                tipo = str(datos_mercado.get("tipo", "")).casefold()
-                                if resultado_real and resultado_real.get("estado") == "finalizado" and tipo in {
-                                    "corners", "corner", "tarjetas", "cards", "goles", "goals"
-                                }:
-                                    dato_google = buscar_estadistica_google(partido, datos_mercado)
-                                    if dato_google is None:
-                                        liquidacion = {
-                                            "estado": "PENDIENTE",
-                                            "texto": "PENDIENTE - Buscando en Google...",
-                                            "total_real": None,
-                                            "linea": datos_mercado.get("linea"),
-                                            "tipo": tipo,
-                                        }
-                                    else:
-                                        clave_resultado = {
-                                            "corners": "corners_total",
-                                            "corner": "corners_total",
-                                            "tarjetas": "tarjetas_total",
-                                            "cards": "tarjetas_total",
-                                            "goles": "goles_total",
-                                            "goals": "goles_total",
-                                        }[tipo]
-                                        resultado_google = dict(resultado_real)
-                                        resultado_google[clave_resultado] = dato_google["total"]
-                                        liquidacion = liquidar_mercado(resultado_google, datos_mercado)
-                                        nombre = {
-                                            "corners": "córners", "corner": "córners",
-                                            "tarjetas": "tarjetas", "cards": "tarjetas",
-                                            "goles": "goles", "goals": "goles",
-                                        }[tipo]
-                                        liquidacion["texto"] = "{}: {} {} - Línea: {} = {}".format(
-                                            dato_google["fuente"], dato_google["total"], nombre,
-                                            datos_mercado.get("linea"), liquidacion["estado"]
-                                        )
-                                        liquidacion["fuente"] = dato_google["fuente"]
-                                        liquidacion["fuente_url"] = dato_google["fuente_url"]
-                                        liquidacion["fuente_nombre"] = dato_google["fuente_nombre"]
                                 liquidaciones[clave_mercado] = liquidacion
                     partido["liquidaciones"] = liquidaciones
             datos["error_api"] = error_api

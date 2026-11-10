@@ -1,0 +1,248 @@
+from __future__ import annotations
+
+import json
+import os
+import re
+import unicodedata
+from datetime import date
+from typing import Dict, List, Optional, Sequence
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
+
+
+API_BASE = "https://v3.football.api-sports.io"
+API_KEY_ENV = "API_FOOTBALL_KEY"
+LEAGUE_ID = 239
+SEASON = 2026
+TIMEOUT_SECONDS = 15
+FINAL_STATUSES = {"FT", "AET", "PEN"}
+LIVE_STATUSES = {"1H", "HT", "2H", "ET", "BT", "P", "LIVE"}
+CANCEL_STATUSES = {"PST", "CANC", "ABD", "AWD", "WO"}
+
+
+def _headers() -> Dict[str, str]:
+    api_key = os.environ.get(API_KEY_ENV)
+    if not api_key:
+        raise RuntimeError("Falta API_FOOTBALL_KEY en el entorno")
+    return {"x-apisports-key": api_key, "Accept": "application/json"}
+
+
+def _get_json(path: str, params: Dict[str, object]) -> Dict[str, object]:
+    url = "{}/{}?{}".format(API_BASE, path.lstrip("/"), urlencode(params))
+    request = Request(url, headers=_headers())
+    try:
+        with urlopen(request, timeout=TIMEOUT_SECONDS) as response:
+            status = response.getcode()
+            body = response.read().decode("utf-8", errors="replace")
+    except HTTPError as error:
+        body = error.read().decode("utf-8", errors="replace")
+        raise RuntimeError("API-Football status {} body: {}".format(error.code, body)) from error
+    except URLError as error:
+        raise RuntimeError("API-Football request failed: {}".format(error)) from error
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError as error:
+        raise RuntimeError("API-Football status {} body: {}".format(status, body)) from error
+    if payload.get("errors"):
+        raise RuntimeError("API-Football status {} errors/body: {}".format(status, json.dumps(payload, ensure_ascii=False)))
+    return payload
+
+
+def _normalizar(texto: str) -> List[str]:
+    normal = unicodedata.normalize("NFKD", texto.casefold())
+    normal = "".join(char for char in normal if not unicodedata.combining(char))
+    return [token for token in re.findall(r"[a-z0-9]+", normal) if token not in {"deportes", "club", "fc", "cd"}]
+
+
+def _coincide(nombre_manual: str, nombre_api: str) -> bool:
+    manual, api = set(_normalizar(nombre_manual)), set(_normalizar(nombre_api))
+    return bool(manual and api and (manual == api or manual <= api or api <= manual))
+
+
+def _stat_value(statistics: object, stat_type: str, none_is_zero: bool = False) -> Optional[int]:
+    if not isinstance(statistics, list):
+        return None
+    for item in statistics:
+        if not isinstance(item, dict) or str(item.get("type", "")).casefold() != stat_type.casefold():
+            continue
+        value = item.get("value")
+        if value is None:
+            return 0 if none_is_zero else None
+        try:
+            return int(float(str(value).replace("%", "")))
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _sum_stat(responses: object, stat_type: str, none_is_zero: bool = False) -> Optional[int]:
+    if not isinstance(responses, list) or len(responses) < 2:
+        return None
+    values = []
+    for team in responses[:2]:
+        if not isinstance(team, dict):
+            return None
+        value = _stat_value(team.get("statistics"), stat_type, none_is_zero)
+        if value is None:
+            return None
+        values.append(value)
+    return sum(values)
+
+
+def _stats_for_fixture(fixture_id: int) -> Dict[str, Optional[int]]:
+    payload = _get_json("fixtures/statistics", {"fixture": fixture_id})
+    responses = payload.get("response", [])
+    corners = _sum_stat(responses, "Corner Kicks")
+    yellow = _sum_stat(responses, "Yellow Cards")
+    red = _sum_stat(responses, "Red Cards", none_is_zero=True)
+    shots_on_target = _sum_stat(responses, "Shots on Goal")
+    cards = yellow + red if yellow is not None and red is not None else None
+
+    # Events are an audit signal for cards. They do not replace empty statistics.
+    event_count = None
+    try:
+        events_payload = _get_json("fixtures/events", {"fixture": fixture_id})
+        events = events_payload.get("response", [])
+        if isinstance(events, list):
+            event_count = sum(
+                1 for event in events
+                if isinstance(event, dict) and str(event.get("type", "")).casefold() == "card"
+            )
+    except Exception as error:
+        print("API-Football events fixture={} error: {}".format(fixture_id, error))
+
+    mismatch = cards is not None and event_count is not None and cards != event_count
+    if mismatch:
+        print(
+            "API-Football validación de tarjetas fixture={}: statistics={} events={}".format(
+                fixture_id, cards, event_count
+            )
+        )
+    return {
+        "corners_total": corners,
+        "tarjetas_total": cards,
+        "tarjetas_amarillas_total": yellow,
+        "tarjetas_rojas_total": red,
+        "tarjetas_eventos_total": event_count,
+        "tarjetas_discrepancia": mismatch,
+        "tiros_a_puerta_total": shots_on_target,
+        "fuente_estadisticas": "API-Football",
+    }
+
+
+def _fixture_to_result(fixture_row: Dict[str, object]) -> Optional[Dict[str, object]]:
+    fixture = fixture_row.get("fixture", {})
+    teams = fixture_row.get("teams", {})
+    goals = fixture_row.get("goals", {})
+    league = fixture_row.get("league", {})
+    if not isinstance(fixture, dict) or not isinstance(teams, dict):
+        return None
+    home = teams.get("home", {})
+    away = teams.get("away", {})
+    status = fixture.get("status", {})
+    if not isinstance(home, dict) or not isinstance(away, dict) or not isinstance(status, dict):
+        return None
+    short = str(status.get("short", "")).upper()
+    if short in FINAL_STATUSES:
+        state, state_text = "finalizado", "Finalizado"
+    elif short in LIVE_STATUSES:
+        state = "en_juego"
+        elapsed = status.get("elapsed")
+        state_text = "Descanso" if short == "HT" else "EN VIVO{}".format(" {}'".format(elapsed) if elapsed is not None else "")
+    elif short in CANCEL_STATUSES:
+        state = "cancelado" if short in {"CANC", "PST", "WO"} else "suspendido"
+        state_text = "Cancelado" if state == "cancelado" else "Suspendido"
+    else:
+        state, state_text = "pendiente", "Programado"
+    home_goals = goals.get("home") if isinstance(goals, dict) else None
+    away_goals = goals.get("away") if isinstance(goals, dict) else None
+    result: Dict[str, object] = {
+        "fixture_id": fixture.get("id"),
+        "local": str(home.get("name", "")),
+        "visitante": str(away.get("name", "")),
+        "liga": str(league.get("name", "Colombia Primera A")) if isinstance(league, dict) else "Colombia Primera A",
+        "estado": state,
+        "estado_corto": short,
+        "estado_texto": state_text,
+        "minuto": status.get("elapsed"),
+        "marcador_local": home_goals,
+        "marcador_visitante": away_goals,
+        "hora_inicio": str(fixture.get("date", ""))[11:16] or None,
+        "fuente": "API-Football",
+    }
+    if isinstance(fixture.get("id"), int) and state in {"en_juego", "finalizado"}:
+        try:
+            result.update(_stats_for_fixture(fixture["id"]))
+        except Exception as error:
+            result.update({
+                "corners_total": None,
+                "tarjetas_total": None,
+                "tarjetas_amarillas_total": None,
+                "tarjetas_rojas_total": None,
+                "tiros_a_puerta_total": None,
+                "error_estadisticas": str(error),
+                "fuente_estadisticas": "API-Football",
+            })
+            print("Error API-Football statistics fixture={}: {}".format(fixture.get("id"), error))
+    return result
+
+
+def obtener_resultados_partidos(partidos: Sequence[Dict[str, object]]) -> List[Dict[str, object]]:
+    """Fetch fixtures and their stats from API-Football for the configured season."""
+    fechas = sorted({str(partido.get("fecha", "")) for partido in partidos if partido.get("fecha")})
+    results: List[Dict[str, object]] = []
+    for fecha in fechas:
+        try:
+            date.fromisoformat(fecha)
+        except ValueError:
+            print("Fecha de partido inválida para API-Football: {!r}".format(fecha))
+            continue
+        try:
+            payload = _get_json("fixtures", {"league": LEAGUE_ID, "season": SEASON, "date": fecha})
+            fixtures = payload.get("response", [])
+            if not isinstance(fixtures, list):
+                continue
+            for row in fixtures:
+                teams = row.get("teams", {}) if isinstance(row, dict) else {}
+                home = teams.get("home", {}) if isinstance(teams, dict) else {}
+                away = teams.get("away", {}) if isinstance(teams, dict) else {}
+                if not isinstance(home, dict) or not isinstance(away, dict):
+                    continue
+                requested = any(
+                    (
+                        _coincide(str(partido.get("local", "")), str(home.get("name", "")))
+                        and _coincide(str(partido.get("visitante", "")), str(away.get("name", "")))
+                    )
+                    or (
+                        _coincide(str(partido.get("local", "")), str(away.get("name", "")))
+                        and _coincide(str(partido.get("visitante", "")), str(home.get("name", "")))
+                    )
+                    for partido in partidos
+                    if str(partido.get("fecha", "")) == fecha
+                )
+                if requested and isinstance(row, dict):
+                    result = _fixture_to_result(row)
+                    if result is not None:
+                        results.append(result)
+        except Exception as error:
+            print("Error API-Football fixtures league={} season={} date={}: {}".format(LEAGUE_ID, SEASON, fecha, error))
+            raise
+    return results
+
+
+def buscar_resultado_partido(
+    local: str,
+    visitante: str,
+    resultados: Sequence[Dict[str, object]],
+) -> Optional[Dict[str, object]]:
+    for result in resultados:
+        same_order = _coincide(local, str(result.get("local", ""))) and _coincide(
+            visitante, str(result.get("visitante", ""))
+        )
+        reverse_order = _coincide(local, str(result.get("visitante", ""))) and _coincide(
+            visitante, str(result.get("local", ""))
+        )
+        if same_order or reverse_order:
+            return result
+    return None
