@@ -39,9 +39,10 @@ def partido_con_valor():
 def test_poisson_and_edge_threshold():
     assert 0 < probabilidad_poisson_over(10.0, 8.5) < 1
     picks = calcular_picks_valor_partido(partido_con_valor())
-    assert picks
-    assert all(pick["edge"] >= 0.08 for pick in picks)
-    assert all(1 <= pick["stake_pct"] <= 4 for pick in picks)
+    assert len(picks) == 5
+    assert any(pick["tiene_valor"] for pick in picks)
+    assert all(pick["tiene_valor"] == (pick["edge"] >= 0.08) for pick in picks)
+    assert all(1 <= pick["stake_pct"] <= 4 for pick in picks if pick["tiene_valor"])
     assert all(not pick["cuota_estimada"] for pick in picks)
 
 
@@ -49,18 +50,17 @@ def test_estimated_odds_are_marked():
     partido = partido_con_valor()
     del partido["odds"]
     picks = calcular_picks_valor_partido(partido)
-    assert picks
+    assert len(picks) == 5
     assert all(pick["cuota_estimada"] for pick in picks)
 
 
-def test_daily_limits_and_order():
+def test_every_market_is_returned_for_every_match():
     partidos = [partido_con_valor() for _ in range(4)]
     total = seleccionar_picks_dia(partidos)
-    assert total <= 5
-    assert all(len(partido["picks_valor"]) <= 2 for partido in partidos)
+    assert total > 0
+    assert all(len(partido["picks_valor"]) == 5 for partido in partidos)
     for partido in partidos:
-        edges = [pick["edge"] for pick in partido["picks_valor"]]
-        assert edges == sorted(edges, reverse=True)
+        assert all("tiene_valor" in pick for pick in partido["picks_valor"])
 
 
 def test_finalized_pick_settlement_uses_market_data():
@@ -89,7 +89,7 @@ if __name__ == "__main__":
     pruebas = [
         test_poisson_and_edge_threshold,
         test_estimated_odds_are_marked,
-        test_daily_limits_and_order,
+        test_every_market_is_returned_for_every_match,
         test_finalized_pick_settlement_uses_market_data,
     ]
     for prueba in pruebas:

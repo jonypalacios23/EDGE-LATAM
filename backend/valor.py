@@ -8,8 +8,6 @@ EDGE_MINIMO = 0.08
 STAKE_MINIMO = 0.01
 STAKE_MAXIMO = 0.04
 FRACCION_KELLY = 0.25
-MAX_PICKS_PARTIDO = 2
-MAX_PICKS_DIA = 5
 
 # Referencias orientativas cuando el archivo no trae una cuota observada.
 CUOTAS_REFERENCIA = {
@@ -159,22 +157,28 @@ def _probabilidad_mercado(partido: Dict[str, object], market: Dict[str, object])
 
 
 def calcular_picks_valor_partido(partido: Dict[str, object]) -> List[Dict[str, object]]:
+    # DIFERENCIACIÓN EDGE-LATAM: SIEMPRE MOSTRAR TODO
     candidatos = []
     for market in MERCADOS:
         calculo = _probabilidad_mercado(partido, market)
-        if calculo is None:
-            continue
-        probabilidad, motivo, probabilidad_estimada = calculo
         cuota = _cuota_partido(partido, market)
         cuota_estimada = cuota is None
         if cuota is None:
             cuota = CUOTAS_REFERENCIA[market["tipo"]]
         implicita = 1.0 / cuota
-        edge = probabilidad - implicita
-        if edge < EDGE_MINIMO:
-            continue
-        stake = (edge / (cuota - 1.0)) * FRACCION_KELLY
-        stake_pct = min(STAKE_MAXIMO, max(STAKE_MINIMO, stake)) * 100.0
+        if calculo is None:
+            probabilidad = None
+            motivo = "No hay datos históricos suficientes para calcular este mercado."
+            probabilidad_estimada = False
+            edge = None
+            stake_pct = 0.0
+        else:
+            probabilidad, motivo, probabilidad_estimada = calculo
+            edge = probabilidad - implicita
+            stake_pct = 0.0
+            if edge >= EDGE_MINIMO:
+                stake = (edge / (cuota - 1.0)) * FRACCION_KELLY
+                stake_pct = min(STAKE_MAXIMO, max(STAKE_MINIMO, stake)) * 100.0
         fuente = partido.get(market["clave"], {})
         if isinstance(partido.get("analisis"), dict):
             fuente = partido["analisis"].get(market["clave"], fuente)
@@ -182,48 +186,35 @@ def calcular_picks_valor_partido(partido: Dict[str, object]) -> List[Dict[str, o
         if not confianza and market["tipo"] == "doble_oportunidad_1x":
             prediccion = partido.get("prediccion_ia", {})
             confianza = prediccion.get("confianza") if isinstance(prediccion, dict) else None
+        tiene_valor = edge is not None and edge >= EDGE_MINIMO
         candidatos.append({
             "tipo": market["tipo"],
             "mercado": market["etiqueta"],
             "linea": market["linea"],
             "probabilidad_real": probabilidad,
-            "probabilidad_real_pct": probabilidad * 100.0,
+            "probabilidad_real_pct": probabilidad * 100.0 if probabilidad is not None else None,
             "probabilidad_estimada": probabilidad_estimada,
             "probabilidad_implicita": implicita,
             "probabilidad_implicita_pct": implicita * 100.0,
             "edge": edge,
-            "edge_pct": edge * 100.0,
+            "edge_pct": edge * 100.0 if edge is not None else None,
+            "tiene_valor": tiene_valor,
+            "estado_valor": "VALOR" if tiene_valor else "SIN VALOR",
             "cuota": cuota,
             "cuota_estimada": cuota_estimada,
             "stake_pct": stake_pct,
             "confianza": confianza or "Media",
             "motivo": motivo,
         })
-    return sorted(candidatos, key=lambda pick: pick["edge"], reverse=True)[:MAX_PICKS_PARTIDO]
+    return sorted(candidatos, key=lambda pick: pick["edge"] if pick["edge"] is not None else -1.0, reverse=True)
 
 
 def seleccionar_picks_dia(partidos: List[Dict[str, object]]) -> int:
-    candidatos = []
-    for indice, partido in enumerate(partidos):
-        for pick in calcular_picks_valor_partido(partido):
-            candidatos.append((indice, pick))
-    candidatos.sort(key=lambda item: item[1]["edge"], reverse=True)
-
-    conteo_partido = {}
     cantidad = 0
     for partido in partidos:
-        partido["picks_valor"] = []
-    for indice, pick in candidatos:
-        if cantidad >= MAX_PICKS_DIA:
-            break
-        if conteo_partido.get(indice, 0) >= MAX_PICKS_PARTIDO:
-            continue
-        partidos[indice]["picks_valor"].append(pick)
-        conteo_partido[indice] = conteo_partido.get(indice, 0) + 1
-        cantidad += 1
-    for partido in partidos:
-        partido["picks_valor"].sort(key=lambda pick: pick["edge"], reverse=True)
-        if not partido["picks_valor"]:
+        partido["picks_valor"] = calcular_picks_valor_partido(partido)
+        cantidad += sum(1 for pick in partido["picks_valor"] if pick["tiene_valor"])
+        if not any(pick["tiene_valor"] for pick in partido["picks_valor"]):
             partido["mensaje"] = "Sin valor en este partido - la casa ya lo vio"
         else:
             partido.pop("mensaje", None)

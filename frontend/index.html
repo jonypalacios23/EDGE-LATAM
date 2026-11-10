@@ -150,7 +150,10 @@
     .banner-valor { margin: 12px 0; padding: 14px; border-radius: 9px; color: #164d2d; background: #e8f6ed; font-weight: 750; }
     .pick-valor { margin-top: 12px; padding: 16px; border: 1px solid #b8e0c5; border-radius: 10px; background: #f0faf3; }
     .pick-valor h3 { margin: 0 0 8px; color: #126b32; font-size: 1.05rem; }
+    .pick-sin-valor { margin-top: 12px; padding: 16px; border: 1px solid #d5d8de; border-radius: 10px; color: #656b75; background: #f0f1f3; }
+    .pick-sin-valor h3 { margin: 0 0 8px; color: #555c66; font-size: 1.05rem; }
     .pick-valor p { margin: 6px 0; line-height: 1.55; }
+    .pick-sin-valor p { margin: 6px 0; line-height: 1.55; }
     .pick-detalle { margin-top: 10px; }
     .pick-detalle summary { color: #244bd7; cursor: pointer; font-weight: 700; }
     .lista-resultados { padding-left: 0; list-style: none; }
@@ -623,34 +626,34 @@
           Array.isArray(partido.picks_valor)
             ? partido.picks_valor.map((pick) => ({ partido, pick }))
             : []
-        ).sort((a, b) => Number(b.pick.edge) - Number(a.pick.edge));
+        ).sort((a, b) => (Number(b.pick.edge) || -1) - (Number(a.pick.edge) || -1));
+        const cantidadValor = picksActivos.filter(({ pick }) => pick.tiene_valor).length;
         const hayHistoricos = activos.some(tieneDatosHistoricos);
         marcarActualizacion(Boolean(datos.error_api) || !activos.some((partido) => partido.datos_en_vivo), hayHistoricos);
-        bannerValor.textContent = picksActivos.length
-          ? `Hoy: ${picksActivos.length} Picks de Valor encontrados en ${activos.length} partidos. No apostamos a todo, solo donde la casa se equivoca.`
-          : "Hoy no hay valor. No apuestes por apostar. Mejor no jugar que jugar sin Edge.";
+        bannerValor.textContent = `Hoy analizamos ${picksActivos.length} mercados, ${cantidadValor} tienen valor, ${cantidadValor ? "apuesta solo en los verdes" : "no apuestes hoy"}.`;
 
         if (!picksActivos.length) {
           const aviso = document.createElement("li");
-          aviso.textContent = activos.length
-            ? "No hay picks que superen el Edge mínimo de 8%."
-            : "No hay partidos activos hoy.";
+          aviso.textContent = activos.length ? "No hay mercados para mostrar." : "No hay partidos activos hoy.";
           listaApuestasHoy.appendChild(aviso);
         }
 
         picksActivos.forEach(({ partido, pick }) => {
           const item = document.createElement("li");
           const tarjeta = document.createElement("article");
-          tarjeta.className = "pick-valor";
+          tarjeta.className = pick.tiene_valor ? "pick-valor" : "pick-sin-valor";
           const titulo = document.createElement("h3");
-          titulo.textContent = `🔥 VALOR: ${pick.mercado} en ${partido.local} vs ${partido.visitante}`;
+          titulo.textContent = pick.tiene_valor
+            ? `🔥 VALOR: ${pick.mercado} en ${partido.local} vs ${partido.visitante}`
+            : `⛔ SIN VALOR - NO APOSTAR: ${pick.mercado} en ${partido.local} vs ${partido.visitante}`;
           tarjeta.appendChild(titulo);
 
+          const porcentaje = (valor) => valor == null ? "No calculable" : `${Number(valor).toFixed(0)}%`;
+          const edgeTexto = pick.edge_pct == null ? "No calculable" : `${Number(pick.edge_pct) > 0 ? "+" : ""}${Number(pick.edge_pct).toFixed(2)}%`;
           const probabilidades = document.createElement("p");
           probabilidades.textContent =
-            `Probabilidad real IA: ${Number(pick.probabilidad_real_pct).toFixed(0)}% | ` +
-            `La casa paga como: ${Number(pick.probabilidad_implicita_pct).toFixed(0)}% | ` +
-            `Edge: +${Number(pick.edge_pct).toFixed(0)}%`;
+            `Probabilidad real IA: ${porcentaje(pick.probabilidad_real_pct)} | ` +
+            `La casa paga como: ${porcentaje(pick.probabilidad_implicita_pct)} | Edge: ${edgeTexto}`;
           tarjeta.appendChild(probabilidades);
 
           const stake = document.createElement("p");
@@ -658,7 +661,7 @@
           const stakeTexto = Number(pick.stake_pct).toFixed(2).replace(/\.?0+$/, "");
           stake.textContent =
             `Cuota: ${Number(pick.cuota).toFixed(2)}${cuotaEtiqueta} | ` +
-            `Apuesta: ${stakeTexto}% de tu banca | ` +
+            `Recomendación: ${pick.tiene_valor ? `${stakeTexto}% de tu banca` : "0% de tu banca - NO APOSTAR"} | ` +
             `Confianza: ${pick.confianza || "Media"}`;
           tarjeta.appendChild(stake);
 
