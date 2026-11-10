@@ -147,6 +147,15 @@
     .pasos-hoy { margin: 10px 0 0; padding-left: 24px; color: #24402f; line-height: 1.6; }
     .resumen-partido-hoy { margin: 14px 2px 0; font-weight: 700; }
     #aviso_lista_hoy { color: #586174; }
+    .banner-valor { margin: 12px 0; padding: 14px; border-radius: 9px; color: #164d2d; background: #e8f6ed; font-weight: 750; }
+    .pick-valor { margin-top: 12px; padding: 16px; border: 1px solid #b8e0c5; border-radius: 10px; background: #f0faf3; }
+    .pick-valor h3 { margin: 0 0 8px; color: #126b32; font-size: 1.05rem; }
+    .pick-valor p { margin: 6px 0; line-height: 1.55; }
+    .pick-detalle { margin-top: 10px; }
+    .pick-detalle summary { color: #244bd7; cursor: pointer; font-weight: 700; }
+    .lista-resultados { padding-left: 0; list-style: none; }
+    .resultado-finalizado { margin-top: 10px; padding: 14px; border-radius: 9px; color: #586174; background: #eceef1; }
+    .resultado-finalizado h3 { margin: 0 0 6px; font-size: 1rem; }
 
     @media (max-width: 600px) {
       body { place-items: start center; padding: 12px; }
@@ -175,8 +184,12 @@
 
     <section id="vista_hoy">
       <h1>Lista de Hoy</h1>
-      <p id="ultima_actualizacion">Última actualización: --:-- - Próxima en 45 min</p>
+      <p id="banner_valor" class="banner-valor" aria-live="polite"></p>
       <ul id="lista_apuestas_hoy" aria-live="polite"></ul>
+      <section id="seccion_resultados_ayer" hidden>
+        <h2>Resultados de Ayer</h2>
+        <ul id="lista_resultados_ayer" class="lista-resultados" aria-live="polite"></ul>
+      </section>
     </section>
 
     <section id="vista_completa" hidden>
@@ -277,6 +290,9 @@
     const resultadoCompleto = document.querySelector("#resultado_completo");
     const botonCompleto = formularioCompleto.querySelector("button[type='submit']");
     const listaApuestasHoy = document.querySelector("#lista_apuestas_hoy");
+    const bannerValor = document.querySelector("#banner_valor");
+    const seccionResultadosAyer = document.querySelector("#seccion_resultados_ayer");
+    const listaResultadosAyer = document.querySelector("#lista_resultados_ayer");
     const mercadosCompletos = [
       { nombre: "Córners", opcion: "Más de 9.5 córners", endpoint: "corners", tipo: "corners", campos: ["promedio_local", "promedio_visitante", "cuota_over_9_5"], resultado: "corners_total", linea: 9.5, unidad: "córners" },
       { nombre: "Goles", opcion: "Más de 2.5 goles", endpoint: "goles", tipo: "goles", campos: ["promedio_local_goles", "promedio_visitante_goles", "cuota_over_2_5"], resultado: "goles_total", linea: 2.5, unidad: "goles" },
@@ -414,8 +430,6 @@
       return partes.join(" · ");
     }
 
-    const ultimaActualizacion = document.querySelector("#ultima_actualizacion");
-
     function horaActual() {
       return new Intl.DateTimeFormat("es-CO", {
         timeZone: "America/Bogota",
@@ -428,7 +442,6 @@
     function marcarActualizacion(sinDatos, tieneDatosHistoricosLista = false) {
       const hora = horaActual();
       const estado = tieneDatosHistoricosLista ? "CON DATOS 10 AÑOS" : sinDatos ? "Sin datos en vivo" : "Próxima en 45 min";
-      ultimaActualizacion.textContent = `Última actualización: ${hora} - ${estado}`;
       console.info(`Lista de Hoy consultada a las ${hora}; ${estado}.`);
     }
 
@@ -593,169 +606,115 @@
     async function cargarListaHoy() {
       if (cargandoListaHoy) return;
       cargandoListaHoy = true;
-      const abiertos = new Set(
-        [...listaApuestasHoy.querySelectorAll(".partido-hoy[open]")].map((item) => item.dataset.partidoKey)
-      );
       listaApuestasHoy.replaceChildren();
+      listaResultadosAyer.replaceChildren();
+
       try {
-        const respuestaPartidos = await fetch(apiUrl(`/api/partidos?v=${Date.now()}`), { cache: "no-store" });
-        const datosHoy = await respuestaPartidos.json();
-        if (!respuestaPartidos.ok) {
-          throw new Error(datosHoy.detail || "No se pudo cargar la lista de partidos.");
-        }
+        const respuesta = await fetch(apiUrl(`/api/partidos?v=${Date.now()}`), { cache: "no-store" });
+        const datos = await respuesta.json();
+        if (!respuesta.ok) throw new Error(datos.detail || "No se pudo cargar la lista de partidos.");
 
-        const partidos = (datosHoy.partidos || []).filter(
-          (partido) => partido.estado !== "cancelado" || partido.datos_en_vivo
-        );
-        partidos.forEach((partido) => {
-          partido.error_api = Boolean(datosHoy.error_api);
-        });
-        const hayHistoricos = partidos.some(tieneDatosHistoricos);
-        marcarActualizacion(Boolean(datosHoy.error_api) || !partidos.some((partido) => partido.datos_en_vivo), hayHistoricos);
-        if (partidos.length === 0) {
+        const partidos = Array.isArray(datos.partidos) ? datos.partidos : [];
+        const finalizado = (partido) => partido.es_finalizado === true ||
+          ["FINALIZADO", "FT", "FINISHED", "AET", "PEN"].includes(String(partido.estado || "").toUpperCase());
+        const finales = partidos.filter(finalizado);
+        const activos = partidos.filter((partido) => !finalizado(partido));
+        const picksActivos = activos.flatMap((partido) =>
+          Array.isArray(partido.picks_valor)
+            ? partido.picks_valor.map((pick) => ({ partido, pick }))
+            : []
+        ).sort((a, b) => Number(b.pick.edge) - Number(a.pick.edge));
+        const hayHistoricos = activos.some(tieneDatosHistoricos);
+        marcarActualizacion(Boolean(datos.error_api) || !activos.some((partido) => partido.datos_en_vivo), hayHistoricos);
+        bannerValor.textContent = picksActivos.length
+          ? `Hoy: ${picksActivos.length} Picks de Valor encontrados en ${activos.length} partidos. No apostamos a todo, solo donde la casa se equivoca.`
+          : "Hoy no hay valor. No apuestes por apostar. Mejor no jugar que jugar sin Edge.";
+
+        if (!picksActivos.length) {
           const aviso = document.createElement("li");
-          aviso.textContent = "No hay partidos disponibles hoy.";
+          aviso.textContent = activos.length
+            ? "No hay picks que superen el Edge mínimo de 8%."
+            : "No hay partidos activos hoy.";
           listaApuestasHoy.appendChild(aviso);
-          return;
-        }
-        const partidosAnalizados = [];
-        for (const partido of partidos) {
-          const resultados = await Promise.all(mercadosCompletos.map(async (mercado) => {
-            const datosMercado = partido.mercados && partido.mercados[mercado.endpoint];
-            const mercadoPartido = datosMercado
-              ? {
-                  ...mercado,
-                  tipo: datosMercado.tipo || mercado.tipo,
-                  linea: Number(datosMercado.linea) || mercado.linea,
-                  direccion: datosMercado.direccion || "mas",
-                  opcion: `${datosMercado.direccion === "menos" ? "Menos de" : "Más de"} ${Number(datosMercado.linea) || mercado.linea} ${mercado.unidad}`,
-                }
-              : mercado;
-            if (!datosMercado) {
-              const historico = buscarDatosHistoricos(partido, mercadoPartido);
-              return historico !== null
-                ? { mercado: mercadoPartido, historico, sinDatos: false }
-                : { mercado: mercadoPartido, sinDatos: true };
-            }
-
-            try {
-              const respuestaAnalisis = await fetch(apiUrl(`/analizar-${mercado.endpoint}`), {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(datosMercado),
-              });
-              const analisis = await respuestaAnalisis.json();
-              if (!respuestaAnalisis.ok) return { mercado: mercadoPartido, sinDatos: true };
-
-              const respuestaKelly = await fetch(apiUrl("/calcular-kelly"), {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  probabilidad: analisis.probabilidad,
-                  cuota: analisis.cuota,
-                  banco: partido.banco,
-                  recomendacion: analisis.recomendacion,
-                }),
-              });
-              const kelly = await respuestaKelly.json();
-              if (!respuestaKelly.ok) return { mercado: mercadoPartido, sinDatos: true };
-              return { mercado: mercadoPartido, analisis, kelly };
-            } catch (_) {
-              return { mercado: mercadoPartido, sinDatos: true };
-            }
-          }));
-          partidosAnalizados.push({ partido, resultados });
         }
 
-        partidosAnalizados.forEach(({ partido, resultados }) => {
-          const cantidadConDatos = resultados.filter((resultadoMercado) => !resultadoMercado.sinDatos).length;
-          const tarjeta = document.createElement("li");
-          const acordeon = document.createElement("details");
-          acordeon.className = "partido-hoy";
-          const titulo = document.createElement("summary");
-          const partidoKey = String(partido.fixture_id || `${partido.local}|${partido.visitante}`);
-          acordeon.dataset.partidoKey = partidoKey;
-          acordeon.open = abiertos.has(partidoKey);
-          titulo.textContent = `${partido.local} vs ${partido.visitante} (${cantidadConDatos})`;
-          acordeon.appendChild(titulo);
+        picksActivos.forEach(({ partido, pick }) => {
+          const item = document.createElement("li");
+          const tarjeta = document.createElement("article");
+          tarjeta.className = "pick-valor";
+          const titulo = document.createElement("h3");
+          titulo.textContent = `🔥 VALOR: ${pick.mercado} en ${partido.local} vs ${partido.visitante}`;
+          tarjeta.appendChild(titulo);
 
-          const detalle = document.createElement("div");
-          detalle.className = "detalle-partido";
-          const panelVivo = crearResumenEnVivo(partido);
-          detalle.appendChild(panelVivo);
-          const aprobados = resultados.filter((item) => !item.sinDatos && item.analisis && item.analisis.recomendacion !== "NO HAY VALOR");
-          const aprobadosOrdenados = aprobados.concat(resultados.filter((item) => !aprobados.includes(item)));
+          const probabilidades = document.createElement("p");
+          probabilidades.textContent =
+            `Probabilidad real IA: ${Number(pick.probabilidad_real_pct).toFixed(0)}% | ` +
+            `La casa paga como: ${Number(pick.probabilidad_implicita_pct).toFixed(0)}% | ` +
+            `Edge: +${Number(pick.edge_pct).toFixed(0)}%`;
+          tarjeta.appendChild(probabilidades);
 
-          aprobadosOrdenados.forEach(({ mercado, analisis, kelly, historico, sinDatos }) => {
-            const resultadoMercado = document.createElement("section");
-            resultadoMercado.dataset.mercado = mercado.endpoint;
-            const encabezado = document.createElement("strong");
-            encabezado.textContent = `${mercado.nombre} · ${mercado.opcion}`;
-            resultadoMercado.appendChild(encabezado);
+          const stake = document.createElement("p");
+          const cuotaEtiqueta = pick.cuota_estimada ? " (estimada)" : "";
+          const stakeTexto = Number(pick.stake_pct).toFixed(2).replace(/\.?0+$/, "");
+          stake.textContent =
+            `Cuota: ${Number(pick.cuota).toFixed(2)}${cuotaEtiqueta} | ` +
+            `Apuesta: ${stakeTexto}% de tu banca | ` +
+            `Confianza: ${pick.confianza || "Media"}`;
+          tarjeta.appendChild(stake);
 
-            if (sinDatos) {
-              resultadoMercado.className = "mercado-rechazado";
-              const mensaje = document.createElement("p");
-              mensaje.textContent = tieneDatosHistoricos(partido)
-                ? `CON DATOS 10 AÑOS · ${textoDatosHistoricos(partido, mercado, buscarDatosHistoricos(partido, mercado) || partido.analisis?.general || partido.prediccion_ia || partido.prediccion || {})}`
-                : "Faltan datos para analizar este mercado.";
-              resultadoMercado.appendChild(mensaje);
-            } else if (historico !== undefined) {
-              resultadoMercado.className = "mercado-rechazado";
-              const resumen = document.createElement("p");
-              resumen.textContent = textoDatosHistoricos(partido, mercado, historico);
-              resultadoMercado.appendChild(resumen);
-            } else if (analisis.recomendacion === "NO HAY VALOR") {
-              resultadoMercado.className = "mercado-rechazado";
-              const estado = document.createElement("p");
-              estado.textContent = "❌ NO APUSTES";
-              const explicacion = document.createElement("p");
-              explicacion.textContent = "No se encontró valor en este mercado, la casa paga muy poquito para el riesgo. Mejor no apostar aquí.";
-              resultadoMercado.append(estado, explicacion);
-            } else {
-              resultadoMercado.className = "mercado-aprobado";
-              const estado = document.createElement("p");
-              estado.textContent = "✅ APUESTA";
-              const datos = document.createElement("p");
-              datos.textContent = `Valor: ${analisis.valor.toFixed(2)}% · Probabilidad: ${(analisis.probabilidad * 100).toFixed(2)}% · Stake Kelly (¼): $${kelly.stake_recomendado.toFixed(2)} · Porcentaje del banco: ${kelly.porcentaje_banco.toFixed(2)}%`;
-              resultadoMercado.append(estado, datos);
-
-              const tituloComoApostar = document.createElement("strong");
-              tituloComoApostar.textContent = "👉 CÓMO APOSTAR ESTO:";
-              const pasos = [
-                "Abre tu casa de apuestas de preferencia",
-                `Busca el partido: ${partido.local} vs ${partido.visitante}`,
-                `Busca el mercado: ${mercado.nombre}`,
-                `Elige la opción: ${mercado.opcion}`,
-                `Apuesta: $${kelly.stake_recomendado.toFixed(2)}`,
-                "Verifica la cuota en tu casa de apuestas de preferencia antes de apostar, porque cambia en vivo.",
-              ];
-              const listaPasos = document.createElement("ol");
-              listaPasos.className = "pasos-hoy";
-              pasos.forEach((paso) => {
-                const itemPaso = document.createElement("li");
-                itemPaso.textContent = paso;
-                listaPasos.appendChild(itemPaso);
-              });
-              const guia = document.createElement("div");
-              guia.className = "como-apostar";
-              guia.append(tituloComoApostar, listaPasos);
-              resultadoMercado.appendChild(guia);
-              resultadoMercado.appendChild(crearIndicadorResultado(partido, mercado, analisis, kelly));
-            }
-            detalle.appendChild(resultadoMercado);
-          });
-
-          configurarBotonActualizar(panelVivo);
-
-          acordeon.appendChild(detalle);
-          tarjeta.appendChild(acordeon);
-          listaApuestasHoy.appendChild(tarjeta);
+          const motivo = document.createElement("details");
+          motivo.className = "pick-detalle";
+          const motivoTitulo = document.createElement("summary");
+          motivoTitulo.textContent = "Ver por qué";
+          const motivoTexto = document.createElement("p");
+          motivoTexto.textContent = pick.motivo || partido.motivo || "Cálculo basado en los registros históricos disponibles.";
+          motivo.append(motivoTitulo, motivoTexto);
+          tarjeta.appendChild(motivo);
+          item.appendChild(tarjeta);
+          listaApuestasHoy.appendChild(item);
         });
 
+        if (finales.length) {
+          seccionResultadosAyer.hidden = false;
+          finales.forEach((partido) => {
+            const item = document.createElement("li");
+            const tarjeta = document.createElement("article");
+            tarjeta.className = "resultado-finalizado";
+            const titulo = document.createElement("h3");
+            titulo.textContent = `${partido.local} vs ${partido.visitante} · Finalizado${partido.marcador_final ? ` · ${partido.marcador_final}` : ""}`;
+            tarjeta.appendChild(titulo);
+
+            const picks = Array.isArray(partido.picks_valor) ? partido.picks_valor : [];
+            if (!picks.length && partido.resultado_prediccion) {
+              const resultadoPick = document.createElement("p");
+              const nombrePick = partido.prediccion || (partido.prediccion_ia && partido.prediccion_ia.mejor_apuesta) || "Pronóstico";
+              const estadoPrediccion = partido.resultado_prediccion;
+              const iconoPrediccion = estadoPrediccion === "GANADO" ? "✅" : estadoPrediccion === "PERDIDO" ? "❌" : "⏳";
+              resultadoPick.textContent = `${iconoPrediccion} ${nombrePick}: ${estadoPrediccion}`;
+              tarjeta.appendChild(resultadoPick);
+            }
+            picks.forEach((pick) => {
+              const resultadoPick = document.createElement("p");
+              const estadoPick = pick.resultado_pick || "PENDIENTE - Esperando estadística oficial";
+              const icono = estadoPick === "GANADO" ? "✅" : estadoPick === "PERDIDO" ? "❌" : "⏳";
+              resultadoPick.textContent = `${icono} ${pick.mercado}: ${estadoPick}`;
+              tarjeta.appendChild(resultadoPick);
+            });
+            if (!picks.length && !partido.resultado_prediccion) {
+              const pendiente = document.createElement("p");
+              pendiente.textContent = "Sin picks de valor para liquidar.";
+              tarjeta.appendChild(pendiente);
+            }
+            item.appendChild(tarjeta);
+            listaResultadosAyer.appendChild(item);
+          });
+        } else {
+          seccionResultadosAyer.hidden = true;
+        }
       } catch (error) {
         console.error("Error al cargar Lista de Hoy:", error);
         marcarActualizacion(true);
+        bannerValor.textContent = "No se pudieron cargar los picks de valor.";
         const aviso = document.createElement("li");
         aviso.textContent = "No se pudo mostrar la lista. Intenta de nuevo en unos minutos.";
         listaApuestasHoy.appendChild(aviso);

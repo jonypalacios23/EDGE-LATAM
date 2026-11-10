@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, Union
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,6 +17,7 @@ if __package__:
     from .kelly import calcular_kelly
     from .tarjetas import analizar_tarjetas
     from .tiros import analizar_tiros
+    from .valor import liquidar_picks_finalizados, seleccionar_picks_dia
 else:
     from api_football import buscar_resultado_por_ids, obtener_resultados_partidos
     from corners import analizar_corners
@@ -22,6 +25,7 @@ else:
     from kelly import calcular_kelly
     from tarjetas import analizar_tarjetas
     from tiros import analizar_tiros
+    from valor import liquidar_picks_finalizados, seleccionar_picks_dia
 
 app = FastAPI()
 app.add_middleware(
@@ -190,14 +194,92 @@ def obtener_partidos_hoy(
 
 @app.get("/api/partidos")
 def obtener_partidos_api() -> Dict[str, object]:
-    """Serve the configured match file unchanged for the frontend list."""
+    """Serve today's match file enriched with value picks and final results."""
     ruta_partidos = Path(__file__).resolve().parent / "partidos_hoy.json"
     try:
         with ruta_partidos.open("r", encoding="utf-8") as archivo:
             datos = json.load(archivo)
-        return datos if isinstance(datos, dict) else {"partidos": []}
+        if not isinstance(datos, dict) or not isinstance(datos.get("partidos"), list):
+            return {"partidos": [], "picks_valor": []}
+
+        partidos = [partido for partido in datos["partidos"] if isinstance(partido, dict)]
+        try:
+            resultados_api = obtener_resultados_partidos(partidos)
+            datos["error_api"] = False
+        except Exception as error:
+            print("Error API:", error)
+            resultados_api = []
+            datos["error_api"] = True
+
+        hoy = datetime.now(ZoneInfo("America/Bogota")).date()
+        for partido in partidos:
+            resultado = buscar_resultado_por_ids(
+                partido.get("local_id"),
+                partido.get("visitante_id"),
+                resultados_api,
+            )
+            partido["resultado_real"] = resultado
+            if resultado is not None:
+                partido["datos_en_vivo"] = True
+                partido["estado_api"] = resultado.get("estado_corto")
+                if resultado.get("marcador_local") is not None:
+                    partido["goles_local"] = resultado["marcador_local"]
+                if resultado.get("marcador_visitante") is not None:
+                    partido["goles_visitante"] = resultado["marcador_visitante"]
+
+            fecha_partido = str(partido.get("fecha", "")).split("T", 1)[0]
+            try:
+                fecha_vencida = datetime.strptime(fecha_partido, "%Y-%m-%d").date() < hoy
+            except ValueError:
+                fecha_vencida = False
+            estado_api = str((resultado or {}).get("estado", "")).casefold()
+            estado_api_corto = str((resultado or {}).get("estado_corto", "")).upper()
+            estado_guardado = str(partido.get("estado", "")).upper()
+            finalizado = (
+                fecha_vencida
+                or estado_api == "finalizado"
+                or estado_api_corto in {"FT", "AET", "PEN"}
+                or estado_guardado in {"FT", "AET", "PEN", "FINISHED", "FINALIZADO"}
+            )
+            partido["es_finalizado"] = finalizado
+            if finalizado:
+                partido["estado"] = "FINALIZADO"
+                goles_local = partido.get("goles_local")
+                goles_visitante = partido.get("goles_visitante")
+                if goles_local is not None and goles_visitante is not None:
+                    partido["marcador_final"] = "{}-{}".format(goles_local, goles_visitante)
+                    pronostico = str(
+                        partido.get("prediccion")
+                        or (partido.get("prediccion_ia") or {}).get("mejor_apuesta", "")
+                    ).casefold()
+                    if "doble oportunidad 1x" in pronostico or pronostico.strip() == "1x":
+                        partido["resultado_prediccion"] = "GANADO" if float(goles_local) >= float(goles_visitante) else "PERDIDO"
+                    elif "gana local" in pronostico or "victoria local" in pronostico:
+                        partido["resultado_prediccion"] = "GANADO" if float(goles_local) > float(goles_visitante) else "PERDIDO"
+                    elif "gana visitante" in pronostico or "victoria visitante" in pronostico:
+                        partido["resultado_prediccion"] = "GANADO" if float(goles_visitante) > float(goles_local) else "PERDIDO"
+                    else:
+                        partido["resultado_prediccion"] = "PENDIENTE"
+            elif resultado is not None:
+                partido["estado"] = resultado.get("estado_texto") or resultado.get("estado", "PENDIENTE")
+
+        total_picks = seleccionar_picks_dia(partidos)
+        for partido in partidos:
+            if partido.get("es_finalizado"):
+                liquidar_picks_finalizados(partido, partido.get("resultado_real"))
+        datos["partidos"] = partidos
+        datos["picks_valor"] = [
+            pick
+            for partido in partidos
+            for pick in partido.get("picks_valor", [])
+            if not partido.get("es_finalizado")
+        ]
+        datos["picks_valor"].sort(key=lambda pick: pick["edge"], reverse=True)
+        datos["total_picks_valor"] = len(datos["picks_valor"])
+        datos["total_partidos_analizados"] = len(partidos)
+        return datos
     except (OSError, UnicodeError, json.JSONDecodeError):
-        return {"partidos": []}
+        return {"partidos": [], "picks_valor": [], "total_picks_valor": 0}
 
 
 class AnalisisCornersRequest(BaseModel):
