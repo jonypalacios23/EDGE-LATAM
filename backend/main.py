@@ -126,7 +126,6 @@ def liquidar_mercado(
     )
 
 
-@app.get("/api/partidos")
 @app.get("/partidos-hoy")
 def obtener_partidos_hoy(
     local: Optional[str] = None,
@@ -187,6 +186,18 @@ def obtener_partidos_hoy(
     except (OSError, UnicodeError, json.JSONDecodeError):
         pass
     return {"partidos": []}
+
+
+@app.get("/api/partidos")
+def obtener_partidos_api() -> Dict[str, object]:
+    """Serve the configured match file unchanged for the frontend list."""
+    ruta_partidos = Path(__file__).resolve().parent / "partidos_hoy.json"
+    try:
+        with ruta_partidos.open("r", encoding="utf-8") as archivo:
+            datos = json.load(archivo)
+        return datos if isinstance(datos, dict) else {"partidos": []}
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return {"partidos": []}
 
 
 class AnalisisCornersRequest(BaseModel):

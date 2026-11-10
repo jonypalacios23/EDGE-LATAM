@@ -1,0 +1,16 @@
+{
+  "correcciones": [
+    {
+      "team_id": 1460,
+      "nombre_api": "Popayan",
+      "nombre_real": "Boca Juniors de Cali",
+      "motivo": "Mismo equipo, API lo renombró a Popayan, en apuestas sigue siendo Boca Juniors de Cali"
+    },
+    {
+      "team_id": 1460,
+      "nombre_api": "Boca Juniors de Cali",
+      "nombre_real": "Boca Juniors de Cali",
+      "motivo": "Ya está bien"
+    }
+  ]
+}

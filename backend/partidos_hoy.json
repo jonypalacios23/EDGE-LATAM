@@ -1,142 +1,406 @@
 {
+  "fecha": "2026-11-10",
+  "total_filtrado": 5,
   "partidos": [
     {
-      "fecha": "2026-11-08",
-      "local": "Deportes Tolima",
-      "visitante": "Millonarios",
-      "liga": "col.1",
-      "estado": "activo",
-      "banco": 100,
-      "mercados": {
-        "corners": {
-          "promedio_local": 5.2,
-          "promedio_visitante": 4.7,
-          "promedio_total": 9.9,
-          "cuota_over_9_5": 2.05,
-          "tipo": "corners",
-          "direccion": "mas",
-          "linea": 9.5
+      "fixture_id": 1549860,
+      "fecha": "2026-11-10T00:00:00+00:00",
+      "estado": "FT",
+      "local": "Junior",
+      "visitante": "Cucuta",
+      "local_id": 1135,
+      "visitante_id": 1470,
+      "liga": "Primera A",
+      "liga_api": "Primera A",
+      "pais": "Colombia",
+      "league_id": 239,
+      "season": 2026,
+      "goles_local": 2,
+      "goles_visitante": 0,
+      "analisis_10anos_local": {
+        "total_partidos_10anos": 590,
+        "prom_goles_favor_10anos": 1.29,
+        "prom_goles_casa_10anos": 1.59,
+        "prom_goles_fuera_10anos": 0.99,
+        "btts_pct_10anos": 48.8,
+        "over25_pct": 42.0,
+        "over15_pct": 67.5,
+        "over35_pct": 20.2,
+        "porteria_cero_pct": 34.7,
+        "prom_goles_ponderado": 1.29
+      },
+      "analisis_10anos_vis": {
+        "total_partidos_10anos": 395,
+        "prom_goles_favor_10anos": 1.3,
+        "prom_goles_casa_10anos": 1.59,
+        "prom_goles_fuera_10anos": 1.02,
+        "btts_pct_10anos": 50.9,
+        "over25_pct": 44.3,
+        "over15_pct": 71.1,
+        "over35_pct": 21.0,
+        "porteria_cero_pct": 31.9,
+        "prom_goles_ponderado": 1.24
+      },
+      "prediccion_ia": {
+        "mejor_apuesta": "Doble Oportunidad 1X",
+        "confianza": "Media",
+        "motivo": "10 años: Local 590 PJ 1.29 goles | Visita 395 PJ 1.3 goles | Esperados 2.74 | BTTS 49.8% | Over2.5 43.1%",
+        "mercados": {
+          "goles": "Over 2.5 NO (43.1%)",
+          "btts": "BTTS Sí (49.8%)",
+          "goles_esperados": "Local 1.65 - Visita 1.09"
         },
-        "goles": {
-          "promedio_local_goles": 1.3,
-          "promedio_visitante_goles": 1.1,
-          "promedio_total": 2.4,
-          "cuota_over_2_5": 2.15,
-          "tipo": "goles",
-          "direccion": "mas",
-          "linea": 2.5
-        },
-        "tarjetas": {
-          "promedio_local_tarjetas": 2.6,
-          "promedio_visitante_tarjetas": 2.7,
-          "promedio_total": 5.3,
-          "cuota_over_4_5": 1.95,
-          "tipo": "tarjetas",
-          "direccion": "mas",
-          "linea": 4.5
-        },
-        "tiros": {
-          "promedio_local_tiros": 4.8,
-          "promedio_visitante_tiros": 3.9,
-          "promedio_total": 8.7,
-          "cuota_over_8_5": 2.1,
-          "tipo": "tiros_a_puerta",
-          "direccion": "mas",
-          "linea": 8.5
-        }
-      }
-    },
-    {
-      "fecha": "2026-11-09",
-      "local": "Alianza Valledupar",
-      "visitante": "Llaneros",
-      "liga": "col.1",
-      "estado": "activo",
-      "banco": 100,
-      "mercados": {
-        "corners": {
-          "promedio_local": 4.7,
-          "promedio_visitante": 4.5,
-          "promedio_total": 9.2,
-          "cuota_over_9_5": 2.05,
-          "tipo": "corners",
-          "direccion": "mas",
-          "linea": 9.5
-        },
-        "goles": {
-          "promedio_local_goles": 1.2,
-          "promedio_visitante_goles": 1.0,
-          "promedio_total": 2.2,
-          "cuota_over_2_5": 2.3,
-          "tipo": "goles",
-          "direccion": "mas",
-          "linea": 2.5
-        },
-        "tarjetas": {
-          "promedio_local_tarjetas": 2.7,
-          "promedio_visitante_tarjetas": 2.5,
-          "promedio_total": 5.2,
-          "cuota_over_4_5": 2.0,
-          "tipo": "tarjetas",
-          "direccion": "mas",
-          "linea": 4.5
-        },
-        "tiros": {
-          "promedio_local_tiros": 4.2,
-          "promedio_visitante_tiros": 3.8,
-          "promedio_total": 8.0,
-          "cuota_over_8_5": 2.15,
-          "tipo": "tiros_a_puerta",
-          "direccion": "mas",
-          "linea": 8.5
-        }
-      }
-    }
-  ],
-  "plantilla_partido": {
-    "fecha": "YYYY-MM-DD",
-    "local": "Equipo local",
-    "visitante": "Equipo visitante",
-    "liga": "col.1",
-    "estado": "activo",
-    "banco": 100,
-    "mercados": {
+        "analizado_con": "Bot 3 - 10 años (2016-2026) + Parametros app"
+      },
       "corners": {
-        "promedio_local": 0,
-        "promedio_visitante": 0,
-        "promedio_total": 0,
-        "cuota_over_9_5": 1.01,
-        "tipo": "corners",
-        "direccion": "mas",
-        "linea": 9.5
+        "promedio_total_10anos": 9.2,
+        "recomendacion": "Menos de 9.5 córners",
+        "confianza": "Media",
+        "dato": "Basado en 985 partidos 10 años"
       },
       "goles": {
-        "promedio_local_goles": 0,
-        "promedio_visitante_goles": 0,
-        "promedio_total": 0,
-        "cuota_over_2_5": 1.01,
-        "tipo": "goles",
-        "direccion": "mas",
-        "linea": 2.5
+        "promedio_total_10anos": 2.59,
+        "recomendacion": "Menos de 2.5 goles",
+        "confianza": "Media",
+        "dato": "Local 1.29 + Visita 1.3 = 2.59 en 10 años"
       },
       "tarjetas": {
-        "promedio_local_tarjetas": 0,
-        "promedio_visitante_tarjetas": 0,
-        "promedio_total": 0,
-        "cuota_over_4_5": 1.01,
-        "tipo": "tarjetas",
-        "direccion": "mas",
-        "linea": 4.5
+        "promedio_total_10anos": 4.6,
+        "recomendacion": "Más de 4.5 tarjetas",
+        "confianza": "Media",
+        "dato": "Promedio historico liga"
       },
-      "tiros": {
-        "promedio_local_tiros": 0,
-        "promedio_visitante_tiros": 0,
-        "promedio_total": 0,
-        "cuota_over_8_5": 1.01,
-        "tipo": "tiros_a_puerta",
-        "direccion": "mas",
-        "linea": 8.5
-      }
+      "tiros_a_puerta": {
+        "promedio_total_10anos": 8.8,
+        "recomendacion": "Más de 8.5 tiros a puerta",
+        "confianza": "Media",
+        "dato": "Goles esperados 2.59"
+      },
+      "prediccion": "Doble Oportunidad 1X",
+      "confianza": "Media",
+      "motivo": "10 años: Local 590 PJ 1.29 goles | Visita 395 PJ 1.3 goles | Esperados 2.74 | BTTS 49.8% | Over2.5 43.1%",
+      "tiene_datos": true,
+      "estado_frontend": "CON DATOS 10 AÑOS"
+    },
+    {
+      "fixture_id": 1649055,
+      "fecha": "2026-11-10T01:00:00+00:00",
+      "estado": "FT",
+      "local": "Arnett Gardens",
+      "visitante": "Waterhouse",
+      "local_id": 3436,
+      "visitante_id": 3447,
+      "liga": "Jamaica Premier League",
+      "liga_api": "Premier League",
+      "pais": "Jamaica",
+      "league_id": 322,
+      "season": 2026,
+      "goles_local": 1,
+      "goles_visitante": 0,
+      "analisis_10anos_local": {
+        "total_partidos_10anos": 329,
+        "prom_goles_favor_10anos": 1.57,
+        "prom_goles_casa_10anos": 1.61,
+        "prom_goles_fuera_10anos": 1.54,
+        "btts_pct_10anos": 55.6,
+        "over25_pct": 51.4,
+        "over15_pct": 75.1,
+        "over35_pct": 28.0,
+        "porteria_cero_pct": 31.3,
+        "prom_goles_ponderado": 1.82
+      },
+      "analisis_10anos_vis": {
+        "total_partidos_10anos": 324,
+        "prom_goles_favor_10anos": 1.29,
+        "prom_goles_casa_10anos": 1.28,
+        "prom_goles_fuera_10anos": 1.29,
+        "btts_pct_10anos": 43.5,
+        "over25_pct": 38.6,
+        "over15_pct": 62.7,
+        "over35_pct": 17.3,
+        "porteria_cero_pct": 40.4,
+        "prom_goles_ponderado": 1.47
+      },
+      "prediccion_ia": {
+        "mejor_apuesta": "Doble Oportunidad 1X",
+        "confianza": "Media",
+        "motivo": "10 años: Local 329 PJ 1.57 goles | Visita 324 PJ 1.29 goles | Esperados 3.17 | BTTS 49.5% | Over2.5 45.0%",
+        "mercados": {
+          "goles": "Over 2.5 NO (45.0%)",
+          "btts": "BTTS Sí (49.5%)",
+          "goles_esperados": "Local 1.82 - Visita 1.34"
+        },
+        "analizado_con": "Bot 3 - 10 años (2016-2026) + Parametros app"
+      },
+      "corners": {
+        "promedio_total_10anos": 9.2,
+        "recomendacion": "Menos de 9.5 córners",
+        "confianza": "Media",
+        "dato": "Basado en 653 partidos 10 años"
+      },
+      "goles": {
+        "promedio_total_10anos": 2.86,
+        "recomendacion": "Menos de 2.5 goles",
+        "confianza": "Media",
+        "dato": "Local 1.57 + Visita 1.29 = 2.86 en 10 años"
+      },
+      "tarjetas": {
+        "promedio_total_10anos": 4.6,
+        "recomendacion": "Más de 4.5 tarjetas",
+        "confianza": "Media",
+        "dato": "Promedio historico liga"
+      },
+      "tiros_a_puerta": {
+        "promedio_total_10anos": 8.8,
+        "recomendacion": "Más de 8.5 tiros a puerta",
+        "confianza": "Media",
+        "dato": "Goles esperados 2.86"
+      },
+      "prediccion": "Doble Oportunidad 1X",
+      "confianza": "Media",
+      "motivo": "10 años: Local 329 PJ 1.57 goles | Visita 324 PJ 1.29 goles | Esperados 3.17 | BTTS 49.5% | Over2.5 45.0%",
+      "tiene_datos": true,
+      "estado_frontend": "CON DATOS 10 AÑOS"
+    },
+    {
+      "fixture_id": 1649139,
+      "fecha": "2026-11-10T19:30:00+00:00",
+      "estado": "NS",
+      "local": "Sportivo Huracan",
+      "visitante": "CA River Plate",
+      "local_id": 2377,
+      "visitante_id": 2351,
+      "liga": "Segunda División",
+      "liga_api": "Segunda División",
+      "pais": "Uruguay",
+      "league_id": 269,
+      "season": 2026,
+      "goles_local": null,
+      "goles_visitante": null,
+      "analisis_10anos_local": {
+        "total_partidos_10anos": 62,
+        "prom_goles_favor_10anos": 1.13,
+        "prom_goles_casa_10anos": 1.33,
+        "prom_goles_fuera_10anos": 0.94,
+        "btts_pct_10anos": 59.7,
+        "over25_pct": 51.6,
+        "over15_pct": 80.6,
+        "over35_pct": 24.2,
+        "porteria_cero_pct": 14.5,
+        "prom_goles_ponderado": 1.18
+      },
+      "analisis_10anos_vis": {
+        "total_partidos_10anos": 393,
+        "prom_goles_favor_10anos": 1.2,
+        "prom_goles_casa_10anos": 1.32,
+        "prom_goles_fuera_10anos": 1.09,
+        "btts_pct_10anos": 52.9,
+        "over25_pct": 49.6,
+        "over15_pct": 70.2,
+        "over35_pct": 26.0,
+        "porteria_cero_pct": 26.2,
+        "prom_goles_ponderado": 1.26
+      },
+      "prediccion_ia": {
+        "mejor_apuesta": "Ambos Marcan - Sí",
+        "confianza": "Alta",
+        "motivo": "10 años: Local 62 PJ 1.13 goles | Visita 393 PJ 1.2 goles | Esperados 2.58 | BTTS 56.3% | Over2.5 50.6%",
+        "mercados": {
+          "goles": "Over 2.5 SI (50.6%)",
+          "btts": "BTTS Sí (56.3%)",
+          "goles_esperados": "Local 1.43 - Visita 1.14"
+        },
+        "analizado_con": "Bot 3 - 10 años (2016-2026) + Parametros app"
+      },
+      "corners": {
+        "promedio_total_10anos": 9.2,
+        "recomendacion": "Más de 9.5 córners",
+        "confianza": "Media",
+        "dato": "Basado en 455 partidos 10 años"
+      },
+      "goles": {
+        "promedio_total_10anos": 2.33,
+        "recomendacion": "Más de 2.5 goles",
+        "confianza": "Media",
+        "dato": "Local 1.13 + Visita 1.2 = 2.33 en 10 años"
+      },
+      "tarjetas": {
+        "promedio_total_10anos": 4.6,
+        "recomendacion": "Más de 4.5 tarjetas",
+        "confianza": "Media",
+        "dato": "Promedio historico liga"
+      },
+      "tiros_a_puerta": {
+        "promedio_total_10anos": 8.8,
+        "recomendacion": "Más de 8.5 tiros a puerta",
+        "confianza": "Media",
+        "dato": "Goles esperados 2.33"
+      },
+      "prediccion": "Ambos Marcan - Sí",
+      "confianza": "Alta",
+      "motivo": "10 años: Local 62 PJ 1.13 goles | Visita 393 PJ 1.2 goles | Esperados 2.58 | BTTS 56.3% | Over2.5 50.6%",
+      "tiene_datos": true,
+      "estado_frontend": "CON DATOS 10 AÑOS"
+    },
+    {
+      "fixture_id": 1649138,
+      "fecha": "2026-11-10T20:30:00+00:00",
+      "estado": "NS",
+      "local": "Envigado",
+      "visitante": "Boca Juniors de Cali",
+      "local_id": 1129,
+      "visitante_id": 1460,
+      "liga": "Primera B",
+      "liga_api": "Primera B",
+      "pais": "Colombia",
+      "league_id": 240,
+      "season": 2026,
+      "goles_local": null,
+      "goles_visitante": null,
+      "analisis_10anos_local": {
+        "total_partidos_10anos": 464,
+        "prom_goles_favor_10anos": 1.0,
+        "prom_goles_casa_10anos": 1.13,
+        "prom_goles_fuera_10anos": 0.86,
+        "btts_pct_10anos": 47.4,
+        "over25_pct": 38.4,
+        "over15_pct": 65.3,
+        "over35_pct": 16.6,
+        "porteria_cero_pct": 27.6,
+        "prom_goles_ponderado": 1.12
+      },
+      "analisis_10anos_vis": {
+        "total_partidos_10anos": 375,
+        "prom_goles_favor_10anos": 0.96,
+        "prom_goles_casa_10anos": 1.06,
+        "prom_goles_fuera_10anos": 0.86,
+        "btts_pct_10anos": 47.7,
+        "over25_pct": 37.9,
+        "over15_pct": 63.5,
+        "over35_pct": 20.0,
+        "porteria_cero_pct": 24.5,
+        "prom_goles_ponderado": 1.15
+      },
+      "prediccion_ia": {
+        "mejor_apuesta": "Doble Oportunidad 1X",
+        "confianza": "Media",
+        "motivo": "10 años: Local 464 PJ 1.0 goles | Visita 375 PJ 0.96 goles | Esperados 2.22 | BTTS 47.5% | Over2.5 38.1%",
+        "mercados": {
+          "goles": "Over 2.5 NO (38.1%)",
+          "btts": "BTTS Sí (47.5%)",
+          "goles_esperados": "Local 1.28 - Visita 0.95"
+        },
+        "analizado_con": "Bot 3 - 10 años (2016-2026) + Parametros app"
+      },
+      "corners": {
+        "promedio_total_10anos": 9.2,
+        "recomendacion": "Menos de 9.5 córners",
+        "confianza": "Media",
+        "dato": "Basado en 839 partidos 10 años"
+      },
+      "goles": {
+        "promedio_total_10anos": 1.96,
+        "recomendacion": "Menos de 2.5 goles",
+        "confianza": "Media",
+        "dato": "Local 1.0 + Visita 0.96 = 1.96 en 10 años"
+      },
+      "tarjetas": {
+        "promedio_total_10anos": 4.6,
+        "recomendacion": "Más de 4.5 tarjetas",
+        "confianza": "Media",
+        "dato": "Promedio historico liga"
+      },
+      "tiros_a_puerta": {
+        "promedio_total_10anos": 8.8,
+        "recomendacion": "Más de 8.5 tiros a puerta",
+        "confianza": "Media",
+        "dato": "Goles esperados 1.96"
+      },
+      "prediccion": "Doble Oportunidad 1X",
+      "confianza": "Media",
+      "motivo": "10 años: Local 464 PJ 1.0 goles | Visita 375 PJ 0.96 goles | Esperados 2.22 | BTTS 47.5% | Over2.5 38.1%",
+      "tiene_datos": true,
+      "estado_frontend": "CON DATOS 10 AÑOS"
+    },
+    {
+      "fixture_id": 1648690,
+      "fecha": "2026-11-10T23:30:00+00:00",
+      "estado": "NS",
+      "local": "Internacional de Bogota",
+      "visitante": "America de Cali",
+      "local_id": 1134,
+      "visitante_id": 1138,
+      "liga": "Copa Colombia / Copa BetPlay",
+      "liga_api": "Copa Colombia",
+      "pais": "Colombia",
+      "league_id": 241,
+      "season": 2026,
+      "goles_local": null,
+      "goles_visitante": null,
+      "analisis_10anos_local": {
+        "total_partidos_10anos": 482,
+        "prom_goles_favor_10anos": 1.07,
+        "prom_goles_casa_10anos": 1.22,
+        "prom_goles_fuera_10anos": 0.92,
+        "btts_pct_10anos": 48.8,
+        "over25_pct": 38.6,
+        "over15_pct": 65.6,
+        "over35_pct": 20.7,
+        "porteria_cero_pct": 31.7,
+        "prom_goles_ponderado": 1.2
+      },
+      "analisis_10anos_vis": {
+        "total_partidos_10anos": 566,
+        "prom_goles_favor_10anos": 1.26,
+        "prom_goles_casa_10anos": 1.5,
+        "prom_goles_fuera_10anos": 1.03,
+        "btts_pct_10anos": 46.8,
+        "over25_pct": 40.6,
+        "over15_pct": 68.4,
+        "over35_pct": 17.1,
+        "porteria_cero_pct": 37.1,
+        "prom_goles_ponderado": 1.33
+      },
+      "prediccion_ia": {
+        "mejor_apuesta": "Doble Oportunidad 1X",
+        "confianza": "Media",
+        "motivo": "10 años: Local 482 PJ 1.07 goles | Visita 566 PJ 1.26 goles | Esperados 2.48 | BTTS 47.8% | Over2.5 39.6%",
+        "mercados": {
+          "goles": "Over 2.5 NO (39.6%)",
+          "btts": "BTTS Sí (47.8%)",
+          "goles_esperados": "Local 1.36 - Visita 1.12"
+        },
+        "analizado_con": "Bot 3 - 10 años (2016-2026) + Parametros app"
+      },
+      "corners": {
+        "promedio_total_10anos": 9.2,
+        "recomendacion": "Menos de 9.5 córners",
+        "confianza": "Media",
+        "dato": "Basado en 1048 partidos 10 años"
+      },
+      "goles": {
+        "promedio_total_10anos": 2.33,
+        "recomendacion": "Menos de 2.5 goles",
+        "confianza": "Media",
+        "dato": "Local 1.07 + Visita 1.26 = 2.33 en 10 años"
+      },
+      "tarjetas": {
+        "promedio_total_10anos": 4.6,
+        "recomendacion": "Más de 4.5 tarjetas",
+        "confianza": "Media",
+        "dato": "Promedio historico liga"
+      },
+      "tiros_a_puerta": {
+        "promedio_total_10anos": 8.8,
+        "recomendacion": "Más de 8.5 tiros a puerta",
+        "confianza": "Media",
+        "dato": "Goles esperados 2.33"
+      },
+      "prediccion": "Doble Oportunidad 1X",
+      "confianza": "Media",
+      "motivo": "10 años: Local 482 PJ 1.07 goles | Visita 566 PJ 1.26 goles | Esperados 2.48 | BTTS 47.8% | Over2.5 39.6%",
+      "tiene_datos": true,
+      "estado_frontend": "CON DATOS 10 AÑOS"
     }
-  }
+  ]
 }
