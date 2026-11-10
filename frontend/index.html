@@ -335,6 +335,85 @@
       return String(texto).replace(/[&<>"']/g, (caracter) => caracteres[caracter]);
     }
 
+    function tieneDatosHistoricos(partido) {
+      return partido.tiene_datos === true || partido.estado_frontend === "CON DATOS 10 AÑOS";
+    }
+
+    function datoDisponible(valor) {
+      if (typeof valor === "number") return Number.isFinite(valor);
+      if (typeof valor === "string") return valor.trim().length > 0;
+      return Boolean(valor && typeof valor === "object" && Object.keys(valor).length);
+    }
+
+    function buscarDatosHistoricos(partido, mercado) {
+      const analisis = partido.analisis && typeof partido.analisis === "object" ? partido.analisis : {};
+      const claves = {
+        corners: ["corners", "corner", "total_corners", "total_corners_10anos"],
+        goles: ["goles_esperados", "expected_goals", "goles"],
+        tarjetas: ["tarjetas", "cards", "total_tarjetas"],
+        tiros: ["tiros_a_puerta", "tiros", "shots_on_target", "total_tiros_a_puerta"],
+      }[mercado.endpoint];
+      for (const clave of claves) {
+        if (datoDisponible(analisis[clave])) return analisis[clave];
+        if (datoDisponible(partido[clave])) return partido[clave];
+      }
+      if (mercado.endpoint === "goles") {
+        const mercadosPronostico = partido.prediccion_ia && partido.prediccion_ia.mercados;
+        if (datoDisponible(mercadosPronostico && mercadosPronostico.goles_esperados)) {
+          return { goles_esperados_texto: mercadosPronostico.goles_esperados };
+        }
+      }
+      if (tieneDatosHistoricos(partido)) {
+        return analisis.general || partido.prediccion_ia || partido.prediccion || "CON DATOS 10 AÑOS";
+      }
+      return null;
+    }
+
+    function textoDatosHistoricos(partido, mercado, fuente) {
+      if (typeof fuente === "number") return `Promedio histórico: ${fuente} ${mercado.unidad}.`;
+      if (typeof fuente === "string") return fuente;
+
+      const camposPromedio = [
+        "goles_esperados", "esperados", "promedio_total_10anos", "promedio_total",
+        "promedio", "total_corners", "total_tarjetas", "total_tiros_a_puerta", "total",
+      ];
+      let promedio = null;
+      if (mercado.endpoint === "goles") {
+        const motivo = (partido.prediccion_ia && partido.prediccion_ia.motivo) || partido.motivo || "";
+        const coincidencia = String(motivo).match(/Esperados\s+([0-9]+(?:\.[0-9]+)?)/i);
+        if (coincidencia) promedio = Number(coincidencia[1]);
+      }
+      if (promedio === null) {
+        for (const campo of camposPromedio) {
+          if (typeof fuente[campo] === "number" && Number.isFinite(fuente[campo])) {
+            promedio = fuente[campo];
+            break;
+          }
+        }
+      }
+
+      const recomendacion = fuente.recomendacion || fuente.mejor_apuesta || fuente.prediccion || fuente.pronostico;
+      const detalle = fuente.dato || fuente.motivo || "";
+      const partes = [];
+      if (promedio !== null) {
+        partes.push(`${mercado.endpoint === "goles" ? "Esperados" : "Promedio histórico"}: ${promedio} ${mercado.unidad}`);
+      }
+      if (recomendacion) partes.push(`Recomendación: ${recomendacion}`);
+      if (detalle && !partes.some((parte) => parte.includes(detalle))) partes.push(detalle);
+      if (!partes.length && fuente.goles_esperados_texto) {
+        partes.push(`Esperados: ${fuente.goles_esperados_texto}`);
+      }
+      if (!partes.length && typeof fuente.mejor_apuesta === "string") {
+        partes.push(`Predicción: ${fuente.mejor_apuesta}`);
+      }
+      if (!partes.length && typeof fuente === "object") {
+        const prediccion = partido.prediccion_ia && partido.prediccion_ia.mejor_apuesta || partido.prediccion;
+        if (prediccion) partes.push(`Predicción general: ${prediccion}`);
+      }
+      if (!partes.length && tieneDatosHistoricos(partido)) return "CON DATOS 10 AÑOS";
+      return partes.join(" · ");
+    }
+
     const ultimaActualizacion = document.querySelector("#ultima_actualizacion");
 
     function horaActual() {
@@ -346,17 +425,18 @@
       }).format(new Date());
     }
 
-    function marcarActualizacion(sinDatos) {
+    function marcarActualizacion(sinDatos, tieneDatosHistoricosLista = false) {
       const hora = horaActual();
-      ultimaActualizacion.textContent = `Última actualización: ${hora} - ${sinDatos ? "Sin datos en vivo" : "Próxima en 45 min"}`;
-      console.info(`Lista de Hoy consultada a las ${hora}; ${sinDatos ? "sin datos en vivo" : "datos en vivo disponibles"}.`);
+      const estado = tieneDatosHistoricosLista ? "CON DATOS 10 AÑOS" : sinDatos ? "Sin datos en vivo" : "Próxima en 45 min";
+      ultimaActualizacion.textContent = `Última actualización: ${hora} - ${estado}`;
+      console.info(`Lista de Hoy consultada a las ${hora}; ${estado}.`);
     }
 
     function crearResumenEnVivo(partido) {
       const panel = document.createElement("section");
       panel.className = "resumen-en-vivo";
       const resultado = partido.resultado_real;
-      let etiquetaEstado = "Sin datos en vivo";
+      let etiquetaEstado = tieneDatosHistoricos(partido) ? "CON DATOS 10 AÑOS" : "Sin datos en vivo";
       if (partido.datos_en_vivo && resultado) {
         if (resultado.estado_texto) {
           etiquetaEstado = resultado.estado_texto;
@@ -463,49 +543,9 @@
       return mostrarEstado("PENDIENTE", "resultado-pendiente");
     }
 
-    function configurarBotonActualizar(panel, partido, detalle, resultados) {
+    function configurarBotonActualizar(panel) {
       const boton = panel.querySelector(".boton-actualizar-partido");
-      boton.addEventListener("click", () => actualizarPartidoAhora(partido, panel, detalle, resultados));
-    }
-
-    async function actualizarPartidoAhora(partido, panel, detalle, resultados) {
-      const boton = panel.querySelector(".boton-actualizar-partido");
-      boton.disabled = true;
-      boton.textContent = "Consultando…";
-      const query = new URLSearchParams({ local: partido.local, visitante: partido.visitante });
-      try {
-        const respuesta = await fetch(apiUrl(`/api/partidos?${query.toString()}`), { cache: "no-store" });
-        const datos = await respuesta.json();
-        if (!respuesta.ok) throw new Error(datos.detail || "Falló la consulta del partido.");
-        const actualizado = (datos.partidos || [])[0];
-        if (actualizado) {
-          partido.resultado_real = actualizado.resultado_real;
-          partido.datos_en_vivo = actualizado.datos_en_vivo;
-          partido.liquidaciones = actualizado.liquidaciones;
-        } else {
-          partido.resultado_real = null;
-          partido.datos_en_vivo = false;
-          partido.liquidaciones = {};
-        }
-        resultados.forEach(({ mercado, analisis, kelly, sinDatos }) => {
-          if (sinDatos || !analisis || analisis.recomendacion === "NO HAY VALOR") return;
-          const seccion = detalle.querySelector(`[data-mercado="${mercado.endpoint}"]`);
-          const indicador = seccion && seccion.querySelector(".indicador-resultado");
-          if (indicador) indicador.replaceWith(crearIndicadorResultado(partido, mercado, analisis, kelly));
-        });
-        const nuevoPanel = crearResumenEnVivo(partido);
-        panel.replaceWith(nuevoPanel);
-        configurarBotonActualizar(nuevoPanel, partido, detalle, resultados);
-        marcarActualizacion(Boolean(datos.error_api) || !partido.datos_en_vivo);
-      } catch (error) {
-        console.error("Error al actualizar partido:", error);
-        partido.resultado_real = null;
-        partido.datos_en_vivo = false;
-        const nuevoPanel = crearResumenEnVivo(partido);
-        panel.replaceWith(nuevoPanel);
-        configurarBotonActualizar(nuevoPanel, partido, detalle, resultados);
-        marcarActualizacion(true);
-      }
+      boton.addEventListener("click", () => cargarListaHoy());
     }
 
     let mercadoActivo = "corners";
@@ -553,10 +593,12 @@
     async function cargarListaHoy() {
       if (cargandoListaHoy) return;
       cargandoListaHoy = true;
+      const abiertos = new Set(
+        [...listaApuestasHoy.querySelectorAll(".partido-hoy[open]")].map((item) => item.dataset.partidoKey)
+      );
       listaApuestasHoy.replaceChildren();
-
       try {
-        const respuestaPartidos = await fetch(apiUrl("/api/partidos"));
+        const respuestaPartidos = await fetch(apiUrl(`/api/partidos?v=${Date.now()}`), { cache: "no-store" });
         const datosHoy = await respuestaPartidos.json();
         if (!respuestaPartidos.ok) {
           throw new Error(datosHoy.detail || "No se pudo cargar la lista de partidos.");
@@ -568,7 +610,8 @@
         partidos.forEach((partido) => {
           partido.error_api = Boolean(datosHoy.error_api);
         });
-        marcarActualizacion(Boolean(datosHoy.error_api) || !partidos.some((partido) => partido.datos_en_vivo));
+        const hayHistoricos = partidos.some(tieneDatosHistoricos);
+        marcarActualizacion(Boolean(datosHoy.error_api) || !partidos.some((partido) => partido.datos_en_vivo), hayHistoricos);
         if (partidos.length === 0) {
           const aviso = document.createElement("li");
           aviso.textContent = "No hay partidos disponibles hoy.";
@@ -588,7 +631,12 @@
                   opcion: `${datosMercado.direccion === "menos" ? "Menos de" : "Más de"} ${Number(datosMercado.linea) || mercado.linea} ${mercado.unidad}`,
                 }
               : mercado;
-            if (!datosMercado) return { mercado: mercadoPartido, sinDatos: true };
+            if (!datosMercado) {
+              const historico = buscarDatosHistoricos(partido, mercadoPartido);
+              return historico !== null
+                ? { mercado: mercadoPartido, historico, sinDatos: false }
+                : { mercado: mercadoPartido, sinDatos: true };
+            }
 
             try {
               const respuestaAnalisis = await fetch(apiUrl(`/analizar-${mercado.endpoint}`), {
@@ -620,25 +668,25 @@
         }
 
         partidosAnalizados.forEach(({ partido, resultados }) => {
-          const aprobados = resultados.filter((resultadoMercado) =>
-            !resultadoMercado.sinDatos && resultadoMercado.analisis.recomendacion !== "NO HAY VALOR"
-          );
+          const cantidadConDatos = resultados.filter((resultadoMercado) => !resultadoMercado.sinDatos).length;
           const tarjeta = document.createElement("li");
           const acordeon = document.createElement("details");
           acordeon.className = "partido-hoy";
           const titulo = document.createElement("summary");
-          titulo.textContent = `${partido.local} vs ${partido.visitante} (${aprobados.length})`;
+          const partidoKey = String(partido.fixture_id || `${partido.local}|${partido.visitante}`);
+          acordeon.dataset.partidoKey = partidoKey;
+          acordeon.open = abiertos.has(partidoKey);
+          titulo.textContent = `${partido.local} vs ${partido.visitante} (${cantidadConDatos})`;
           acordeon.appendChild(titulo);
 
           const detalle = document.createElement("div");
           detalle.className = "detalle-partido";
           const panelVivo = crearResumenEnVivo(partido);
           detalle.appendChild(panelVivo);
-          const aprobadosOrdenados = aprobados.concat(
-            resultados.filter((resultadoMercado) => !aprobados.includes(resultadoMercado))
-          );
+          const aprobados = resultados.filter((item) => !item.sinDatos && item.analisis && item.analisis.recomendacion !== "NO HAY VALOR");
+          const aprobadosOrdenados = aprobados.concat(resultados.filter((item) => !aprobados.includes(item)));
 
-          aprobadosOrdenados.forEach(({ mercado, analisis, kelly, sinDatos }) => {
+          aprobadosOrdenados.forEach(({ mercado, analisis, kelly, historico, sinDatos }) => {
             const resultadoMercado = document.createElement("section");
             resultadoMercado.dataset.mercado = mercado.endpoint;
             const encabezado = document.createElement("strong");
@@ -648,8 +696,15 @@
             if (sinDatos) {
               resultadoMercado.className = "mercado-rechazado";
               const mensaje = document.createElement("p");
-              mensaje.textContent = "Faltan datos para analizar este mercado.";
+              mensaje.textContent = tieneDatosHistoricos(partido)
+                ? `CON DATOS 10 AÑOS · ${textoDatosHistoricos(partido, mercado, buscarDatosHistoricos(partido, mercado) || partido.analisis?.general || partido.prediccion_ia || partido.prediccion || {})}`
+                : "Faltan datos para analizar este mercado.";
               resultadoMercado.appendChild(mensaje);
+            } else if (historico !== undefined) {
+              resultadoMercado.className = "mercado-rechazado";
+              const resumen = document.createElement("p");
+              resumen.textContent = textoDatosHistoricos(partido, mercado, historico);
+              resultadoMercado.appendChild(resumen);
             } else if (analisis.recomendacion === "NO HAY VALOR") {
               resultadoMercado.className = "mercado-rechazado";
               const estado = document.createElement("p");
@@ -691,7 +746,7 @@
             detalle.appendChild(resultadoMercado);
           });
 
-          configurarBotonActualizar(panelVivo, partido, detalle, resultados);
+          configurarBotonActualizar(panelVivo);
 
           acordeon.appendChild(detalle);
           tarjeta.appendChild(acordeon);
