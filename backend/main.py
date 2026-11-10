@@ -8,12 +8,20 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from api_football import buscar_resultado_partido, obtener_resultados_partidos
-from corners import analizar_corners
-from goles import analizar_goles
-from kelly import calcular_kelly
-from tarjetas import analizar_tarjetas
-from tiros import analizar_tiros
+if __package__:
+    from .api_football import buscar_resultado_partido, obtener_resultados_partidos
+    from .corners import analizar_corners
+    from .goles import analizar_goles
+    from .kelly import calcular_kelly
+    from .tarjetas import analizar_tarjetas
+    from .tiros import analizar_tiros
+else:
+    from api_football import buscar_resultado_partido, obtener_resultados_partidos
+    from corners import analizar_corners
+    from goles import analizar_goles
+    from kelly import calcular_kelly
+    from tarjetas import analizar_tarjetas
+    from tiros import analizar_tiros
 
 app = FastAPI()
 app.add_middleware(

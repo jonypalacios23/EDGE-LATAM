@@ -5,6 +5,7 @@ import os
 import re
 import unicodedata
 from datetime import date
+from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -21,10 +22,40 @@ LIVE_STATUSES = {"1H", "HT", "2H", "ET", "BT", "P", "LIVE"}
 CANCEL_STATUSES = {"PST", "CANC", "ABD", "AWD", "WO"}
 
 
-def _headers() -> Dict[str, str]:
+def _load_api_key(env_path: Optional[Path] = None) -> Optional[str]:
+    """Read the key from the process environment first, then the repo-root .env."""
     api_key = os.environ.get(API_KEY_ENV)
+    if api_key:
+        return api_key.strip() or None
+
+    path = env_path or (Path(__file__).resolve().parents[1] / ".env")
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+
+    for line in lines:
+        entry = line.strip()
+        if not entry or entry.startswith("#"):
+            continue
+        if entry.startswith("export "):
+            entry = entry[len("export "):].strip()
+        name, separator, value = entry.partition("=")
+        if not separator or name.strip() != API_KEY_ENV:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        else:
+            value = value.split(" #", 1)[0].strip()
+        return value or None
+    return None
+
+
+def _headers() -> Dict[str, str]:
+    api_key = _load_api_key()
     if not api_key:
-        raise RuntimeError("Falta API_FOOTBALL_KEY en el entorno")
+        raise RuntimeError("Falta API_FOOTBALL_KEY en variable de entorno o archivo .env")
     return {"x-apisports-key": api_key, "Accept": "application/json"}
 
 

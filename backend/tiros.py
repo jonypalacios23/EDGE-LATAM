@@ -3,7 +3,10 @@ from __future__ import annotations
 from math import exp, factorial
 from typing import Dict, Union
 
-from value import calcular_valor
+if __package__:
+    from .value import calcular_valor
+else:
+    from value import calcular_valor
 
 
 def analizar_tiros(

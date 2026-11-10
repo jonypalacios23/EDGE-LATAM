@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 from api_football import _sum_stat, buscar_resultado_partido, _fixture_to_result
@@ -64,16 +67,28 @@ def probar_fixture_y_coincidencia():
     assert buscar_resultado_partido("Tolima", "Millonarios", [result]) == result
 
 
-def probar_api_key_solo_desde_entorno():
-    from api_football import _headers
+def probar_api_key_desde_entorno_o_env_local():
+    from api_football import API_KEY_ENV, _headers, _load_api_key
 
-    with patch.dict("os.environ", {}, clear=True):
+    with tempfile.TemporaryDirectory() as temp_dir:
+        env_path = Path(temp_dir) / ".env"
+        env_path.write_text("# local secret\nAPI_FOOTBALL_KEY='archivo-secreto'\n", encoding="utf-8")
+        with patch.dict(os.environ, {}, clear=True):
+            assert _load_api_key(env_path) == "archivo-secreto"
+
+        with patch.dict(os.environ, {API_KEY_ENV: "variable-secreta"}, clear=True):
+            assert _load_api_key(env_path) == "variable-secreta"
+            assert _headers()["x-apisports-key"] == "variable-secreta"
+
+    with patch.dict(os.environ, {}, clear=True), patch(
+        "api_football.Path.resolve", return_value=Path("/ruta/inexistente/backend/api_football.py")
+    ):
         try:
             _headers()
         except RuntimeError as error:
-            assert str(error) == "Falta API_FOOTBALL_KEY en el entorno"
+            assert str(error) == "Falta API_FOOTBALL_KEY en variable de entorno o archivo .env"
             return
-    raise AssertionError("Debía exigir API_FOOTBALL_KEY del entorno")
+    raise AssertionError("Debía fallar cuando no hay clave en entorno ni en .env")
 
 
 def main():
@@ -82,7 +97,7 @@ def main():
         ("Estadísticas vacías quedan sin total", probar_no_hay_total_si_statistics_vacio),
         ("Liquida por estadísticas; ignora el marcador", probar_liquidacion_usa_estadisticas_y_no_marcador),
         ("Reconoce el fixture y sus equipos", probar_fixture_y_coincidencia),
-        ("Lee la clave solo del entorno", probar_api_key_solo_desde_entorno),
+        ("Lee la clave del entorno o del .env local", probar_api_key_desde_entorno_o_env_local),
     ]
     aprobadas = 0
     for nombre, prueba in pruebas:
