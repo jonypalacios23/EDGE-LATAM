@@ -15,6 +15,7 @@ from urllib.request import Request, urlopen
 API_BASE = "https://v3.football.api-sports.io"
 API_KEY_ENV = "API_FOOTBALL_KEY"
 LEAGUE_ID = 239
+LEAGUE_IDS = [239, 240]  # 239 Primera A, 240 Primera B
 SEASON = 2026
 TIMEOUT_SECONDS = 15
 FINAL_STATUSES = {"FT", "AET", "PEN"}
@@ -59,7 +60,7 @@ def _headers() -> Dict[str, str]:
     return {"x-apisports-key": api_key, "Accept": "application/json"}
 
 
-def _get_json(path: str, params: Dict[str, object]) -> Dict[str, object]:
+def _get_json_original(path: str, params: Dict[str, object]) -> Dict[str, object]:
     url = "{}/{}?{}".format(API_BASE, path.lstrip("/"), urlencode(params))
     request = Request(url, headers=_headers())
     try:
@@ -87,10 +88,21 @@ def _normalizar(texto: str) -> List[str]:
 
 
 def _coincide(nombre_manual: str, nombre_api: str) -> bool:
-    manual, api = set(_normalizar(nombre_manual)), set(_normalizar(nombre_api))
-    return bool(manual and api and (manual == api or manual <= api or api <= manual))
-
-
+    manual = set(_normalizar(nombre_manual))
+    api = set(_normalizar(nombre_api))
+    if not manual or not api:
+        return False
+    if manual == api or manual < api or api < manual:
+        return True
+    # Alianza cambio de nombre: Valledupar = Petrolera = FC
+    if "alianza" in manual and "alianza" in api:
+        return True
+    # Comparten token distintivo de 5+ letras
+    comun = manual & api
+    for tok in comun:
+        if len(tok) >= 5:
+            return True
+    return False
 def _stat_value(statistics: object, stat_type: str, none_is_zero: bool = False) -> Optional[int]:
     if not isinstance(statistics, list):
         return None
@@ -277,3 +289,36 @@ def buscar_resultado_partido(
         if same_order or reverse_order:
             return result
     return None
+
+
+# --- PARCHE UTC: busca fecha + dia siguiente para fixtures ---
+def _get_json(endpoint, params=None):
+    # Si no es fixtures o no tiene fecha, comportamiento normal
+    if endpoint != "fixtures" or not params or "date" not in params:
+        return _get_json_original(endpoint, params)
+    try:
+        from datetime import datetime, timedelta
+        fecha_str = str(params.get("date"))
+        fecha_obj = datetime.strptime(fecha_str, "%Y-%m-%d")
+        siguiente = (fecha_obj + timedelta(days=1)).strftime("%Y-%m-%d")
+    except Exception:
+        return _get_json_original(endpoint, params)
+
+    data1 = _get_json_original(endpoint, params)
+    params2 = dict(params)
+    params2["date"] = siguiente
+    data2 = _get_json_original(endpoint, params2)
+
+    # Unir respuestas sin duplicar por fixture id
+    resp1 = data1.get("response", []) if isinstance(data1, dict) else []
+    resp2 = data2.get("response", []) if isinstance(data2, dict) else []
+    vistos = set()
+    unidos = []
+    for f in resp1 + resp2:
+        fid = f.get("fixture", {}).get("id") if isinstance(f, dict) else None
+        if fid is None or fid not in vistos:
+            vistos.add(fid)
+            unidos.append(f)
+    resultado = dict(data1) if isinstance(data1, dict) else {}
+    resultado["response"] = unidos
+    return resultado
