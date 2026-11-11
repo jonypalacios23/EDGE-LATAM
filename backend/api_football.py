@@ -236,7 +236,8 @@ def obtener_resultados_partidos(partidos: Sequence[Dict[str, object]]) -> List[D
                     requests_cache[cache_key] = response if isinstance(response, list) else []
                 except Exception as error:
                     print("Error API-Football fixtures team={} date={}: {}".format(team_id, fecha, error))
-                    raise
+                    # Keep processing the other fixtures so one failed lookup cannot blank the full slate.
+                    requests_cache[cache_key] = []
             fixture_rows.extend(requests_cache[cache_key])
 
         seen_rows = set()

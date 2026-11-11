@@ -1,7 +1,14 @@
 from __future__ import annotations
 
+from datetime import date, datetime
 from math import exp, factorial
 from typing import Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
+
+if __package__:
+    from .calibracion import calibrar_probabilidad
+else:
+    from calibracion import calibrar_probabilidad
 
 
 EDGE_MINIMO = 0.08
@@ -162,6 +169,17 @@ def _frecuencia_over25(partido: Dict[str, object]) -> Optional[Tuple[float, str]
     return sum(porcentajes) / len(porcentajes), " · ".join(motivos)
 
 
+def _fecha_calibracion(partido: Dict[str, object]) -> Optional[date]:
+    texto = str(partido.get("fecha_local") or partido.get("fecha") or "")
+    try:
+        fecha = datetime.fromisoformat(texto.replace("Z", "+00:00"))
+        if fecha.tzinfo is not None:
+            fecha = fecha.astimezone(ZoneInfo("America/Bogota"))
+        return fecha.date()
+    except ValueError:
+        return None
+
+
 def _media_mercado(partido: Dict[str, object], clave: str) -> Optional[float]:
     aliases = {
         "corners": ("promedio_total_10anos", "total_corners", "promedio_total", "promedio"),
@@ -251,7 +269,7 @@ def _probabilidad_mercado(partido: Dict[str, object], market: Dict[str, object])
     return min(1.0, max(0.0, probabilidad)), motivo, estimada
 
 
-def calcular_picks_valor_partido(partido: Dict[str, object]) -> List[Dict[str, object]]:
+def calcular_picks_valor_partido(partido: Dict[str, object], historial: object = None) -> List[Dict[str, object]]:
     # DIFERENCIACIÓN EDGE-LATAM: SIEMPRE MOSTRAR TODO
     candidatos = []
     for market in MERCADOS:
@@ -261,7 +279,12 @@ def calcular_picks_valor_partido(partido: Dict[str, object]) -> List[Dict[str, o
         if cuota is None:
             cuota = CUOTAS_REFERENCIA[market["tipo"]]
         implicita = 1.0 / cuota
-        probabilidad, motivo, probabilidad_estimada = calculo
+        probabilidad_base, motivo, probabilidad_estimada = calculo
+        probabilidad, observaciones_calibracion, calibracion_activa = calibrar_probabilidad(
+            probabilidad_base, str(market["tipo"]), historial, _fecha_calibracion(partido),
+        )
+        if calibracion_activa:
+            motivo += " · Calibración superó el backtest cronológico con {} resultados verificados".format(observaciones_calibracion)
         edge = probabilidad - implicita
         _, confianza, badge_datos, n_muestra = _datos_usados(partido)
         stake_pct = 0.0
@@ -277,6 +300,9 @@ def calcular_picks_valor_partido(partido: Dict[str, object]) -> List[Dict[str, o
             "linea": market["linea"],
             "probabilidad_real": probabilidad,
             "probabilidad_real_pct": probabilidad * 100.0 if probabilidad is not None else None,
+            "probabilidad_base": probabilidad_base,
+            "calibracion_observaciones": observaciones_calibracion,
+            "calibracion_activa": calibracion_activa,
             "probabilidad_estimada": probabilidad_estimada,
             "probabilidad_implicita": implicita,
             "probabilidad_implicita_pct": implicita * 100.0,
@@ -296,10 +322,10 @@ def calcular_picks_valor_partido(partido: Dict[str, object]) -> List[Dict[str, o
     return sorted(candidatos, key=lambda pick: pick["edge"] if pick["edge"] is not None else -1.0, reverse=True)
 
 
-def seleccionar_picks_dia(partidos: List[Dict[str, object]]) -> int:
+def seleccionar_picks_dia(partidos: List[Dict[str, object]], historial: object = None) -> int:
     cantidad = 0
     for partido in partidos:
-        partido["picks_valor"] = calcular_picks_valor_partido(partido)
+        partido["picks_valor"] = calcular_picks_valor_partido(partido, historial)
         cantidad += sum(1 for pick in partido["picks_valor"] if pick["tiene_valor"])
         if not any(pick["tiene_valor"] for pick in partido["picks_valor"]):
             partido["mensaje"] = "Sin valor en este partido - la casa ya lo vio"
@@ -353,4 +379,7 @@ def liquidar_picks_finalizados(partido: Dict[str, object], resultado: Optional[D
                 liquidacion_estimada = True
         pick["resultado_fuente"] = "Promedio liga (estimado)" if liquidacion_estimada else "API-Football"
         if liquidacion_estimada:
+            pick["resultado_estimado"] = True
             pick["resultado_nota"] = "Liquidado con datos estimados - Confianza Baja"
+        else:
+            pick["resultado_estimado"] = False

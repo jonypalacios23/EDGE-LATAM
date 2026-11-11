@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, Union
@@ -11,7 +12,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 if __package__:
+    from .calibracion import metricas_calibracion
     from .api_football import buscar_resultado_por_ids, obtener_resultados_partidos
+    from .cartelera import obtener_cartelera_diaria
+    from .historico_storage import read_history, write_history
     from .corners import analizar_corners
     from .goles import analizar_goles
     from .kelly import calcular_kelly
@@ -19,7 +23,10 @@ if __package__:
     from .tiros import analizar_tiros
     from .valor import liquidar_picks_finalizados, seleccionar_picks_dia
 else:
+    from calibracion import metricas_calibracion
     from api_football import buscar_resultado_por_ids, obtener_resultados_partidos
+    from cartelera import obtener_cartelera_diaria
+    from historico_storage import read_history, write_history
     from corners import analizar_corners
     from goles import analizar_goles
     from kelly import calcular_kelly
@@ -34,6 +41,106 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _ruta_historico() -> Path:
+    configurada = os.environ.get("EDGE_HISTORY_FILE")
+    return Path(configurada).expanduser() if configurada else Path(__file__).resolve().parent / "historico_partidos.json"
+
+
+def _fecha_local_partido(partido: Dict[str, object]) -> str:
+    fecha_texto = str(partido.get("fecha", ""))
+    try:
+        fecha = datetime.fromisoformat(fecha_texto.replace("Z", "+00:00"))
+        if fecha.tzinfo is None:
+            fecha = fecha.replace(tzinfo=ZoneInfo("UTC"))
+        return fecha.astimezone(ZoneInfo("America/Bogota")).date().isoformat()
+    except ValueError:
+        return fecha_texto.split("T", 1)[0]
+
+
+def _clave_partido(partido: Dict[str, object]) -> str:
+    fixture_id = partido.get("fixture_id")
+    if fixture_id is not None:
+        return "fixture:{}".format(fixture_id)
+    return "{}:{}:{}:{}".format(
+        _fecha_local_partido(partido), partido.get("local_id", ""), partido.get("visitante_id", ""),
+        partido.get("local", ""),
+    )
+
+
+def _guardar_historico(partidos: list) -> None:
+    """Persist original predictions and update settlements as results arrive."""
+    ruta = _ruta_historico()
+    try:
+        contenido, etag = read_history(ruta)
+        archivados = contenido.get("partidos", [])
+    except Exception as error:
+        print("No se pudo leer el histórico persistente:", error)
+        contenido, etag, archivados = {"partidos": []}, None, []
+    if not isinstance(archivados, list):
+        archivados = []
+    por_clave = {_clave_partido(p): p for p in archivados if isinstance(p, dict)}
+    cambio = False
+    for partido in partidos:
+        if not isinstance(partido, dict) or not isinstance(partido.get("picks_valor"), list):
+            continue
+        clave = _clave_partido(partido)
+        anterior = por_clave.get(clave)
+        actual = {
+            "fixture_id": partido.get("fixture_id"),
+            "fecha": partido.get("fecha"),
+            "fecha_local": _fecha_local_partido(partido),
+            "liga": partido.get("liga") or partido.get("liga_api") or "",
+            "pais": partido.get("pais", ""),
+            "local": partido.get("local", ""),
+            "visitante": partido.get("visitante", ""),
+            "estado": partido.get("estado", "FINALIZADO"),
+            "es_finalizado": bool(partido.get("es_finalizado")),
+            "marcador_final": partido.get("marcador_final"),
+            "picks_valor": partido.get("picks_valor", []),
+            "actualizado_en": datetime.now(ZoneInfo("UTC")).isoformat(),
+        }
+        if anterior:
+            picks_anteriores = {
+                p.get("tipo"): dict(p)
+                for p in anterior.get("picks_valor", [])
+                if isinstance(p, dict)
+            }
+            campos_liquidacion = (
+                "resultado_pick", "total_real", "total_estimado", "resultado_fuente",
+                "resultado_nota", "resultado_estimado", "marcador_final",
+            )
+            if partido.get("es_finalizado"):
+                for pick_nuevo in actual["picks_valor"]:
+                    tipo = pick_nuevo.get("tipo")
+                    pick_previo = picks_anteriores.get(tipo)
+                    if pick_previo is None:
+                        picks_anteriores[tipo] = pick_nuevo
+                        continue
+                    previo_oficial = pick_previo.get("resultado_pick") and not pick_previo.get("resultado_estimado")
+                    nuevo_oficial = pick_nuevo.get("resultado_pick") and not pick_nuevo.get("resultado_estimado")
+                    if nuevo_oficial or not previo_oficial:
+                        for campo in campos_liquidacion:
+                            if campo in pick_nuevo:
+                                pick_previo[campo] = pick_nuevo[campo]
+            actual["picks_valor"] = list(picks_anteriores.values()) or actual["picks_valor"]
+            # Refresh only live score/status; preserve pre-match names and picks.
+            for campo in ("marcador_final", "estado", "fecha_local", "es_finalizado"):
+                if actual.get(campo):
+                    anterior[campo] = actual[campo]
+            anterior["picks_valor"] = actual["picks_valor"]
+            anterior["actualizado_en"] = actual["actualizado_en"]
+            por_clave[clave] = anterior
+        else:
+            por_clave[clave] = actual
+        cambio = True
+    if not cambio:
+        return
+    try:
+        write_history({"partidos": list(por_clave.values())}, ruta, expected_etag=etag)
+    except Exception as error:
+        print("No se pudo guardar el histórico persistente:", error)
 
 
 def liquidar_mercado(
@@ -202,22 +309,49 @@ def obtener_partidos_api() -> Dict[str, object]:
         if not isinstance(datos, dict) or not isinstance(datos.get("partidos"), list):
             return {"partidos": [], "picks_valor": []}
 
-        partidos = [partido for partido in datos["partidos"] if isinstance(partido, dict)]
-        try:
-            resultados_api = obtener_resultados_partidos(partidos)
-            datos["error_api"] = False
-        except Exception as error:
-            print("Error API:", error)
-            resultados_api = []
-            datos["error_api"] = True
-
         hoy = datetime.now(ZoneInfo("America/Bogota")).date()
+        partidos = []
+        cartelera_actualizada = False
+        try:
+            partidos = obtener_cartelera_diaria(hoy)
+            cartelera_actualizada = bool(partidos)
+        except Exception as error:
+            print("Error cargando cartelera diaria; usando el archivo manual:", error)
+        if not cartelera_actualizada:
+            partidos = [partido for partido in datos["partidos"] if isinstance(partido, dict)]
+            try:
+                resultados_api = obtener_resultados_partidos(partidos)
+                datos["error_api"] = False
+            except Exception as error:
+                print("Error API:", error)
+                resultados_api = []
+                datos["error_api"] = True
+        else:
+            resultados_api = []
+            datos["error_api"] = False
+            datos["total_partidos_api"] = len(partidos)
+            # Keep the manually selected prior-day fixtures in the settlement flow
+            # so they can be archived even after the live board advances to today.
+            previos_manuales = [
+                partido for partido in datos["partidos"]
+                if isinstance(partido, dict)
+                and _fecha_local_partido(partido) < hoy.isoformat()
+                and _clave_partido(partido) not in {_clave_partido(p) for p in partidos}
+            ]
+            if previos_manuales:
+                try:
+                    resultados_api = obtener_resultados_partidos(previos_manuales)
+                except Exception as error:
+                    print("Error actualizando partidos previos seleccionados:", error)
+                partidos.extend(previos_manuales)
+
         for partido in partidos:
-            resultado = buscar_resultado_por_ids(
-                partido.get("local_id"),
-                partido.get("visitante_id"),
-                resultados_api,
-            )
+            if cartelera_actualizada and "resultado_real" in partido:
+                resultado = partido.get("resultado_real")
+            else:
+                resultado = buscar_resultado_por_ids(
+                    partido.get("local_id"), partido.get("visitante_id"), resultados_api,
+                )
             partido["resultado_real"] = resultado
             if resultado is not None:
                 partido["datos_en_vivo"] = True
@@ -227,7 +361,7 @@ def obtener_partidos_api() -> Dict[str, object]:
                 if resultado.get("marcador_visitante") is not None:
                     partido["goles_visitante"] = resultado["marcador_visitante"]
 
-            fecha_partido = str(partido.get("fecha", "")).split("T", 1)[0]
+            fecha_partido = _fecha_local_partido(partido)
             try:
                 fecha_vencida = datetime.strptime(fecha_partido, "%Y-%m-%d").date() < hoy
             except ValueError:
@@ -263,10 +397,25 @@ def obtener_partidos_api() -> Dict[str, object]:
             elif resultado is not None:
                 partido["estado"] = resultado.get("estado_texto") or resultado.get("estado", "PENDIENTE")
 
-        total_picks = seleccionar_picks_dia(partidos)
+        try:
+            historial_calibracion, _ = read_history(_ruta_historico())
+        except Exception as error:
+            print("No se pudo cargar histórico para calibrar probabilidades:", error)
+            historial_calibracion = {"partidos": []}
+        total_picks = seleccionar_picks_dia(partidos, historial_calibracion.get("partidos", []))
+        datos["calibracion"] = {
+            "muestras_verificadas_por_mercado": metricas_calibracion(historial_calibracion.get("partidos", [])),
+            "mercados_con_calibracion_validada": sorted({
+                str(pick.get("tipo"))
+                for partido in partidos
+                for pick in partido.get("picks_valor", [])
+                if pick.get("calibracion_activa")
+            }),
+        }
         for partido in partidos:
             if partido.get("es_finalizado"):
                 liquidar_picks_finalizados(partido, partido.get("resultado_real"))
+        _guardar_historico(partidos)
         datos["partidos"] = partidos
         datos["picks_valor"] = [
             pick
@@ -286,6 +435,36 @@ def obtener_partidos_api() -> Dict[str, object]:
         return datos
     except (OSError, UnicodeError, json.JSONDecodeError):
         return {"partidos": [], "picks_valor": [], "total_picks_valor": 0}
+
+
+@app.get("/api/historico")
+def obtener_historico() -> Dict[str, object]:
+    ruta = _ruta_historico()
+    try:
+        payload, _ = read_history(ruta)
+        partidos = payload.get("partidos", []) if isinstance(payload, dict) else []
+    except Exception as error:
+        print("No se pudo leer el histórico persistente:", error)
+        partidos = []
+    partidos = [p for p in partidos if isinstance(p, dict) and p.get("es_finalizado")]
+    partidos.sort(key=lambda p: str(p.get("fecha_local", p.get("fecha", ""))), reverse=True)
+    picks = [pick for partido in partidos for pick in partido.get("picks_valor", []) if isinstance(pick, dict)]
+    liquidados_verificados = [
+        p for p in picks
+        if p.get("resultado_pick") in {"GANADO", "PERDIDO"} and not p.get("resultado_estimado")
+    ]
+    ganados = sum(1 for p in liquidados_verificados if p.get("resultado_pick") == "GANADO")
+    return {
+        "partidos": partidos,
+        "resumen": {
+            "partidos": len(partidos),
+            "picks_verificados": len(liquidados_verificados),
+            "ganados": ganados,
+            "perdidos": len(liquidados_verificados) - ganados,
+            "porcentaje_acierto": round(100 * ganados / len(liquidados_verificados), 1) if liquidados_verificados else None,
+            "picks_estimados": sum(1 for p in picks if p.get("resultado_estimado") and p.get("resultado_pick") in {"GANADO", "PERDIDO"}),
+        },
+    }
 
 
 class AnalisisCornersRequest(BaseModel):

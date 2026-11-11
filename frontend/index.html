@@ -22,7 +22,7 @@
     }
 
     main {
-      width: min(100%, 680px);
+      width: min(100%, 920px);
       padding: 32px;
       border-radius: 16px;
       background: #fff;
@@ -126,10 +126,18 @@
     }
     .como-apostar ol { margin: 8px 0 0; padding-left: 22px; }
     .nota-cuotas { margin: 18px auto 0; color: #747d8e; font-size: .75rem; text-align: center; }
-    #lista_apuestas_hoy { padding-left: 0; list-style: none; }
-    .partido-hoy { margin-top: 12px; border: 1px solid #d9dfe9; border-radius: 10px; background: #fff; overflow: hidden; }
-    .partido-hoy summary { padding: 16px; font-weight: 750; cursor: pointer; }
+    #lista_apuestas_hoy, #lista_historico { padding-left: 0; list-style: none; }
+    .liga-grupo { margin-top: 16px; border: 1px solid #d9dfe9; border-radius: 12px; background: #fff; overflow: hidden; }
+    .liga-grupo > summary { padding: 16px; color: #172033; background: #f7f8fb; font-weight: 800; cursor: pointer; }
+    .liga-contenido { padding: 4px 14px 14px; }
+    .partido-card { margin-top: 10px; border: 1px solid #e1e5ed; border-radius: 10px; background: #fff; overflow: hidden; }
+    .partido-card > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 14px; font-weight: 750; cursor: pointer; }
+    .hora-partido { min-width: 48px; color: #244bd7; font-variant-numeric: tabular-nums; }
+    .resumen-partido { flex: 1 1 250px; }
+    .badge-valor { padding: 4px 8px; border-radius: 999px; color: #126b32; background: #e8f6ed; font-size: .82rem; }
     .detalle-partido { padding: 0 14px 14px; }
+    .estado-resumen { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin: 4px 0 12px; color: #586174; font-weight: 650; }
+    .marcador-resumen { color: #172033; font-weight: 800; }
     .mercado-aprobado, .mercado-rechazado { margin-top: 10px; padding: 14px; border-radius: 9px; line-height: 1.6; }
     .mercado-aprobado { color: #126b32; background: #e8f6ed; }
     .mercado-rechazado { color: #646b78; background: #f0f1f3; }
@@ -148,17 +156,16 @@
     .resumen-partido-hoy { margin: 14px 2px 0; font-weight: 700; }
     #aviso_lista_hoy { color: #586174; }
     .banner-valor { margin: 12px 0; padding: 14px; border-radius: 9px; color: #164d2d; background: #e8f6ed; font-weight: 750; }
-    .pick-valor { margin-top: 12px; padding: 16px; border: 1px solid #b8e0c5; border-radius: 10px; background: #f0faf3; }
-    .pick-valor h3 { margin: 0 0 8px; color: #126b32; font-size: 1.05rem; }
-    .pick-sin-valor { margin-top: 12px; padding: 16px; border: 1px solid #d5d8de; border-radius: 10px; color: #656b75; background: #f0f1f3; }
-    .pick-sin-valor h3 { margin: 0 0 8px; color: #555c66; font-size: 1.05rem; }
-    .pick-valor p { margin: 6px 0; line-height: 1.55; }
-    .pick-sin-valor p { margin: 6px 0; line-height: 1.55; }
-    .pick-detalle { margin-top: 10px; }
-    .pick-detalle summary { color: #244bd7; cursor: pointer; font-weight: 700; }
-    .lista-resultados { padding-left: 0; list-style: none; }
-    .resultado-finalizado { margin-top: 10px; padding: 14px; border-radius: 9px; color: #586174; background: #eceef1; }
-    .resultado-finalizado h3 { margin: 0 0 6px; font-size: 1rem; }
+    .mercado-prediccion { margin-top: 10px; padding: 14px; border-radius: 9px; line-height: 1.55; }
+    .mercado-prediccion h3 { margin: 0 0 5px; font-size: 1rem; }
+    .mercado-prediccion p { margin: 5px 0; }
+    .mercado-con-valor { border: 1px solid #b8e0c5; color: #126b32; background: #f0faf3; }
+    .mercado-sin-valor { border: 1px solid #d5d8de; color: #626875; background: #f0f1f3; }
+    .resultado-pick { margin-top: 8px !important; font-weight: 750; }
+    .panel-historico { margin: 12px 0; padding: 15px; border-radius: 10px; color: #164d2d; background: #e8f6ed; font-weight: 750; }
+    .historico-dia { margin: 18px 0 8px; color: #586174; font-size: .95rem; font-weight: 800; }
+    .partido-historico { margin-top: 10px; padding: 14px; border: 1px solid #e1e5ed; border-radius: 10px; background: #fff; }
+    .partido-historico h3 { margin: 0 0 8px; font-size: 1rem; }
 
     @media (max-width: 600px) {
       body { place-items: start center; padding: 12px; }
@@ -178,6 +185,7 @@
   <main>
     <nav class="pestanas" aria-label="Tipo de análisis">
       <button class="pestana activa" type="button" data-vista="hoy" aria-selected="true">Lista de Hoy</button>
+      <button class="pestana" type="button" data-vista="historico" aria-selected="false">Histórico</button>
       <button class="pestana" type="button" data-vista="completo" aria-selected="false">Partido Completo</button>
       <button class="pestana" type="button" data-vista="individual" data-mercado="corners" aria-selected="false">Córners</button>
       <button class="pestana" type="button" data-vista="individual" data-mercado="goles" aria-selected="false">Goles</button>
@@ -188,27 +196,28 @@
     <section id="vista_hoy">
       <h1>Lista de Hoy</h1>
       <p id="banner_valor" class="banner-valor" aria-live="polite"></p>
+      <button id="actualizar_lista" type="button" class="boton-actualizar-partido">Actualizar partidos</button>
       <ul id="lista_apuestas_hoy" aria-live="polite"></ul>
-      <section id="seccion_resultados_ayer" hidden>
-        <h2>Resultados de Ayer</h2>
-        <ul id="lista_resultados_ayer" class="lista-resultados" aria-live="polite"></ul>
-      </section>
+    </section>
+
+    <section id="vista_historico" hidden>
+      <h1>Histórico</h1>
+      <p id="resumen_historico" class="panel-historico" aria-live="polite">Cargando resultados…</p>
+      <ul id="lista_historico" aria-live="polite"></ul>
     </section>
 
     <section id="vista_completa" hidden>
       <h1>Partido Completo</h1>
-      <p>Ingresa los datos una vez para comparar los cuatro mercados y calcular Kelly. La cuota la consultas e ingresas manualmente desde tu casa de apuestas de preferencia.</p>
+      <p>Compara las señales de los cuatro mercados para un partido.</p>
 
       <form id="formulario_completo">
         <div class="mercados-completos">
           <section class="mercado-completo">
-            <h2>Equipos y banco</h2>
+            <h2>Equipos</h2>
             <label for="equipo_local">Local</label>
             <input id="equipo_local" name="equipo_local" type="text" required>
             <label for="equipo_visitante">Visitante</label>
             <input id="equipo_visitante" name="equipo_visitante" type="text" required>
-            <label for="banco_completo">Banco</label>
-            <input id="banco_completo" name="banco" type="number" min="0" step="any" required>
           </section>
 
           <section class="mercado-completo">
@@ -270,9 +279,6 @@
         <label id="etiqueta_cuota" for="cuota_over_9_5">Cuota Over 9.5</label>
         <input id="cuota_over_9_5" name="cuota_over_9_5" type="number" min="1.01" step="any" required>
 
-        <label for="banco">Banco</label>
-        <input id="banco" name="banco" type="number" min="0" step="any" value="100" required>
-
         <button id="boton" type="submit">Analizar</button>
       </form>
 
@@ -294,8 +300,9 @@
     const botonCompleto = formularioCompleto.querySelector("button[type='submit']");
     const listaApuestasHoy = document.querySelector("#lista_apuestas_hoy");
     const bannerValor = document.querySelector("#banner_valor");
-    const seccionResultadosAyer = document.querySelector("#seccion_resultados_ayer");
-    const listaResultadosAyer = document.querySelector("#lista_resultados_ayer");
+    const listaHistorico = document.querySelector("#lista_historico");
+    const resumenHistorico = document.querySelector("#resumen_historico");
+    const botonActualizarLista = document.querySelector("#actualizar_lista");
     const mercadosCompletos = [
       { nombre: "Córners", opcion: "Más de 9.5 córners", endpoint: "corners", tipo: "corners", campos: ["promedio_local", "promedio_visitante", "cuota_over_9_5"], resultado: "corners_total", linea: 9.5, unidad: "córners" },
       { nombre: "Goles", opcion: "Más de 2.5 goles", endpoint: "goles", tipo: "goles", campos: ["promedio_local_goles", "promedio_visitante_goles", "cuota_over_2_5"], resultado: "goles_total", linea: 2.5, unidad: "goles" },
@@ -342,227 +349,12 @@
       },
       tiros: {
         titulo: "Analizador de tiros a puerta",
-        descripcion: "Evalúa Over 8.5 tiros a puerta y calcula el stake Kelly.",
+        descripcion: "Evalúa el valor estimado para Over 8.5 tiros a puerta.",
         campos: ["promedio_local_tiros", "promedio_visitante_tiros", "cuota_over_8_5"],
         etiquetas: ["Promedio local de tiros a puerta", "Promedio visitante de tiros a puerta", "Cuota Over 8.5"],
         endpoint: "tiros",
       },
     };
-
-    function escaparHtml(texto) {
-      const caracteres = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
-      return String(texto).replace(/[&<>"']/g, (caracter) => caracteres[caracter]);
-    }
-
-    function tieneDatosHistoricos(partido) {
-      return partido.tiene_datos === true || partido.estado_frontend === "CON DATOS 10 AÑOS";
-    }
-
-    function datoDisponible(valor) {
-      if (typeof valor === "number") return Number.isFinite(valor);
-      if (typeof valor === "string") return valor.trim().length > 0;
-      return Boolean(valor && typeof valor === "object" && Object.keys(valor).length);
-    }
-
-    function buscarDatosHistoricos(partido, mercado) {
-      const analisis = partido.analisis && typeof partido.analisis === "object" ? partido.analisis : {};
-      const claves = {
-        corners: ["corners", "corner", "total_corners", "total_corners_10anos"],
-        goles: ["goles_esperados", "expected_goals", "goles"],
-        tarjetas: ["tarjetas", "cards", "total_tarjetas"],
-        tiros: ["tiros_a_puerta", "tiros", "shots_on_target", "total_tiros_a_puerta"],
-      }[mercado.endpoint];
-      for (const clave of claves) {
-        if (datoDisponible(analisis[clave])) return analisis[clave];
-        if (datoDisponible(partido[clave])) return partido[clave];
-      }
-      if (mercado.endpoint === "goles") {
-        const mercadosPronostico = partido.prediccion_ia && partido.prediccion_ia.mercados;
-        if (datoDisponible(mercadosPronostico && mercadosPronostico.goles_esperados)) {
-          return { goles_esperados_texto: mercadosPronostico.goles_esperados };
-        }
-      }
-      if (tieneDatosHistoricos(partido)) {
-        return analisis.general || partido.prediccion_ia || partido.prediccion || "CON DATOS 10 AÑOS";
-      }
-      return null;
-    }
-
-    function textoDatosHistoricos(partido, mercado, fuente) {
-      if (typeof fuente === "number") return `Promedio histórico: ${fuente} ${mercado.unidad}.`;
-      if (typeof fuente === "string") return fuente;
-
-      const camposPromedio = [
-        "goles_esperados", "esperados", "promedio_total_10anos", "promedio_total",
-        "promedio", "total_corners", "total_tarjetas", "total_tiros_a_puerta", "total",
-      ];
-      let promedio = null;
-      if (mercado.endpoint === "goles") {
-        const motivo = (partido.prediccion_ia && partido.prediccion_ia.motivo) || partido.motivo || "";
-        const coincidencia = String(motivo).match(/Esperados\s+([0-9]+(?:\.[0-9]+)?)/i);
-        if (coincidencia) promedio = Number(coincidencia[1]);
-      }
-      if (promedio === null) {
-        for (const campo of camposPromedio) {
-          if (typeof fuente[campo] === "number" && Number.isFinite(fuente[campo])) {
-            promedio = fuente[campo];
-            break;
-          }
-        }
-      }
-
-      const recomendacion = fuente.recomendacion || fuente.mejor_apuesta || fuente.prediccion || fuente.pronostico;
-      const detalle = fuente.dato || fuente.motivo || "";
-      const partes = [];
-      if (promedio !== null) {
-        partes.push(`${mercado.endpoint === "goles" ? "Esperados" : "Promedio histórico"}: ${promedio} ${mercado.unidad}`);
-      }
-      if (recomendacion) partes.push(`Recomendación: ${recomendacion}`);
-      if (detalle && !partes.some((parte) => parte.includes(detalle))) partes.push(detalle);
-      if (!partes.length && fuente.goles_esperados_texto) {
-        partes.push(`Esperados: ${fuente.goles_esperados_texto}`);
-      }
-      if (!partes.length && typeof fuente.mejor_apuesta === "string") {
-        partes.push(`Predicción: ${fuente.mejor_apuesta}`);
-      }
-      if (!partes.length && typeof fuente === "object") {
-        const prediccion = partido.prediccion_ia && partido.prediccion_ia.mejor_apuesta || partido.prediccion;
-        if (prediccion) partes.push(`Predicción general: ${prediccion}`);
-      }
-      if (!partes.length && tieneDatosHistoricos(partido)) return "CON DATOS 10 AÑOS";
-      return partes.join(" · ");
-    }
-
-    function horaActual() {
-      return new Intl.DateTimeFormat("es-CO", {
-        timeZone: "America/Bogota",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      }).format(new Date());
-    }
-
-    function marcarActualizacion(sinDatos, tieneDatosHistoricosLista = false) {
-      const hora = horaActual();
-      const estado = tieneDatosHistoricosLista ? "CON DATOS 10 AÑOS" : sinDatos ? "Sin datos en vivo" : "Próxima en 45 min";
-      console.info(`Lista de Hoy consultada a las ${hora}; ${estado}.`);
-    }
-
-    function crearResumenEnVivo(partido) {
-      const panel = document.createElement("section");
-      panel.className = "resumen-en-vivo";
-      const resultado = partido.resultado_real;
-      let etiquetaEstado = tieneDatosHistoricos(partido) ? "CON DATOS 10 AÑOS" : "Sin datos en vivo";
-      if (partido.datos_en_vivo && resultado) {
-        if (resultado.estado_texto) {
-          etiquetaEstado = resultado.estado_texto;
-        } else if (resultado.estado === "finalizado") {
-          etiquetaEstado = "Finalizado";
-        } else if (resultado.estado_corto === "HT") {
-          etiquetaEstado = "Descanso";
-        } else if (resultado.estado === "en_juego") {
-          etiquetaEstado = resultado.minuto !== null && resultado.minuto !== undefined && Number.isFinite(Number(resultado.minuto))
-            ? `EN VIVO ${resultado.minuto}'`
-            : "EN VIVO";
-        } else if (resultado.hora_inicio) {
-          etiquetaEstado = `Programado · ${resultado.hora_inicio}`;
-        } else {
-          etiquetaEstado = "Programado";
-        }
-      }
-      const estado = document.createElement("div");
-      estado.className = "estado-partido-vivo";
-      estado.textContent = etiquetaEstado;
-      panel.appendChild(estado);
-
-      const liga = document.createElement("div");
-      liga.className = "liga-partido-vivo";
-      liga.textContent = `Liga: ${resultado && resultado.liga ? resultado.liga : (nombresLigas[partido.liga] || partido.liga || "Sin dato")}`;
-      panel.appendChild(liga);
-
-      const marcador = document.createElement("div");
-      marcador.className = "marcador-partido-vivo";
-      const golesLocal = resultado && resultado.marcador_local !== null ? resultado.marcador_local : "--";
-      const golesVisitante = resultado && resultado.marcador_visitante !== null ? resultado.marcador_visitante : "--";
-      marcador.textContent = `Marcador: ${golesLocal} - ${golesVisitante}`;
-      panel.appendChild(marcador);
-
-      const boton = document.createElement("button");
-      boton.type = "button";
-      boton.className = "boton-actualizar-partido";
-      boton.textContent = "Actualizar ahora";
-      panel.appendChild(boton);
-      return panel;
-    }
-
-    function crearIndicadorResultado(partido, mercado, analisis, kelly) {
-      const indicador = document.createElement("div");
-      const mostrarEstado = (texto, clase, fuenteUrl, fuenteNombre) => {
-        indicador.className = `indicador-resultado ${clase}`;
-        const estado = document.createElement("div");
-        estado.textContent = texto;
-        indicador.replaceChildren(estado);
-        if (fuenteUrl) {
-          const fuente = document.createElement("a");
-          fuente.href = fuenteUrl;
-          fuente.target = "_blank";
-          fuente.rel = "noopener noreferrer";
-          fuente.textContent = `Fuente: ${fuenteNombre || "resultado web"}`;
-          indicador.appendChild(fuente);
-        }
-        return indicador;
-      };
-      const agregarBarraProgreso = (total) => {
-        const barra = document.createElement("div");
-        barra.className = "barra-progreso";
-        barra.setAttribute("role", "progressbar");
-        barra.setAttribute("aria-label", `Progreso de ${mercado.nombre}`);
-        barra.setAttribute("aria-valuemin", "0");
-        barra.setAttribute("aria-valuemax", String(mercado.linea));
-        if (total !== null && total !== undefined) barra.setAttribute("aria-valuenow", String(total));
-        const avance = document.createElement("span");
-        const porcentaje = total === null || total === undefined
-          ? 0
-          : Math.min(100, Math.max(0, Number(total) / mercado.linea * 100));
-        avance.style.width = `${porcentaje}%`;
-        barra.appendChild(avance);
-        indicador.appendChild(barra);
-      };
-      const resultado = partido.resultado_real;
-      const liquidacion = partido.liquidaciones && partido.liquidaciones[mercado.endpoint];
-      const estadoPartido = resultado && resultado.estado;
-      if (estadoPartido === "cancelado" || estadoPartido === "suspendido") {
-        return mostrarEstado("ANULADO / REEMBOLSO", "resultado-pendiente");
-      }
-      if (estadoPartido === "finalizado") {
-        if (liquidacion && liquidacion.estado === "GANADO") {
-          return mostrarEstado(liquidacion.texto, "resultado-ganado", liquidacion.fuente_url, liquidacion.fuente_nombre);
-        }
-        if (liquidacion && liquidacion.estado === "PERDIDO") {
-          return mostrarEstado(liquidacion.texto, "resultado-perdido", liquidacion.fuente_url, liquidacion.fuente_nombre);
-        }
-        return mostrarEstado(
-          liquidacion && liquidacion.texto ? liquidacion.texto : "Esperando estadística oficial API-Football",
-          "resultado-pendiente"
-        );
-      }
-      if (estadoPartido === "en_juego") {
-        const total = resultado[mercado.resultado];
-        if (total === null || total === undefined) {
-          return mostrarEstado("EN VIVO - Esperando estadística oficial", "resultado-pendiente");
-        }
-        const minuto = resultado.minuto === null || resultado.minuto === undefined ? "" : ` · Min ${resultado.minuto}'`;
-        mostrarEstado(`EN VIVO${minuto} - ${mercado.nombre} real: ${total} - Línea: ${mercado.linea}`, "resultado-pendiente");
-        agregarBarraProgreso(total);
-        return indicador;
-      }
-      return mostrarEstado("PENDIENTE", "resultado-pendiente");
-    }
-
-    function configurarBotonActualizar(panel) {
-      const boton = panel.querySelector(".boton-actualizar-partido");
-      boton.addEventListener("click", () => cargarListaHoy());
-    }
 
     let mercadoActivo = "corners";
     const valoresPorMercado = Object.fromEntries(
@@ -586,6 +378,7 @@
       guardarValoresMercado(mercadoActivo);
       mercadoActivo = clave;
       document.querySelector("#vista_hoy").hidden = true;
+      document.querySelector("#vista_historico").hidden = true;
       document.querySelector("#vista_completa").hidden = true;
       document.querySelector("#vista_individual").hidden = false;
       const mercado = mercados[clave];
@@ -606,134 +399,223 @@
       });
     }
 
-    async function cargarListaHoy() {
+    async function cargarListaHoy() { return cargarPartidosPorLiga(); }
+
+    function fechaLocalPartido(partido) {
+      const fecha = new Date(partido.fecha || "");
+      if (!Number.isFinite(fecha.getTime())) return "";
+      const partes = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(fecha);
+      const p = Object.fromEntries(partes.map(({ type, value }) => [type, value]));
+      return `${p.year}-${p.month}-${p.day}`;
+    }
+
+    function hoyLocal() {
+      const partes = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+      const p = Object.fromEntries(partes.map(({ type, value }) => [type, value]));
+      return `${p.year}-${p.month}-${p.day}`;
+    }
+
+    function horaLocalPartido(partido) {
+      const fecha = new Date(partido.fecha || "");
+      return Number.isFinite(fecha.getTime())
+        ? new Intl.DateTimeFormat("es-CO", { timeZone: "America/Bogota", hour: "2-digit", minute: "2-digit", hour12: false }).format(fecha)
+        : "Hora por confirmar";
+    }
+
+    function nombreLigaVisible(partido) {
+      const liga = String(partido.liga || partido.liga_api || "Liga por confirmar");
+      const pais = String(partido.pais || "");
+      if (pais.toLowerCase() === "colombia") return `Colombia · ${liga}`;
+      return pais ? `${pais} · ${liga}` : (nombresLigas[liga] || liga);
+    }
+
+    function esPartidoFinal(partido) {
+      return partido.es_finalizado === true || ["FINALIZADO", "FT", "FINISHED", "AET", "PEN"].includes(String(partido.estado || "").toUpperCase());
+    }
+
+    function etiquetaEstadoPartido(partido) {
+      const resultado = partido.resultado_real || {};
+      if (resultado.estado_texto) return resultado.estado_texto;
+      const estado = String(resultado.estado_corto || partido.estado || "").toUpperCase();
+      if (esPartidoFinal(partido)) return "Finalizado";
+      if (estado === "HT") return "Descanso";
+      if (["1H", "2H", "ET", "P", "LIVE"].includes(estado)) return `En juego${resultado.minuto == null ? "" : ` · ${resultado.minuto}'`}`;
+      return "Programado";
+    }
+
+    function crearPrediccionMercado(partido, pick) {
+      const tarjeta = document.createElement("article");
+      tarjeta.className = `mercado-prediccion ${pick.tiene_valor ? "mercado-con-valor" : "mercado-sin-valor"}`;
+      const titulo = document.createElement("h3");
+      titulo.textContent = pick.tiene_valor ? `✅ Apuesta sugerida · ${pick.mercado}` : `⛔ No apostar · ${pick.mercado}`;
+      tarjeta.appendChild(titulo);
+      const porcentaje = (valor) => valor == null ? "—" : `${Number(valor).toFixed(1)}%`;
+      const edge = Number(pick.edge_pct || 0);
+      const detalle = document.createElement("p");
+      detalle.textContent = `Probabilidad estimada: ${porcentaje(pick.probabilidad_real_pct)} · Mercado: ${porcentaje(pick.probabilidad_implicita_pct)} · Edge: ${edge > 0 ? "+" : ""}${edge.toFixed(1)}%`;
+      tarjeta.appendChild(detalle);
+
+      if (["GANADO", "PERDIDO"].includes(pick.resultado_pick)) {
+        const veredicto = document.createElement("p");
+        veredicto.className = "resultado-pick";
+        const total = pick.total_real != null ? pick.total_real : pick.total_estimado;
+        const totalTexto = total == null ? "" : ` · Total ${Number(total).toFixed(1)}${pick.resultado_estimado ? " estimado" : ""}`;
+        const linea = pick.linea == null ? "" : ` · Línea ${pick.linea}`;
+        veredicto.textContent = `${pick.resultado_pick === "GANADO" ? "✅ GANADA" : "❌ PERDIDA"}${totalTexto}${linea}${pick.resultado_estimado ? " · Resultado provisional" : ""}`;
+        tarjeta.appendChild(veredicto);
+      } else if (!esPartidoFinal(partido) && partido.resultado_real && partido.resultado_real.estado === "en_juego") {
+        const estadisticas = { corners_over_8_5: ["corners_total", "Córners"], tarjetas_over_4_5: ["tarjetas_total", "Tarjetas"], tiros_over_8_5: ["tiros_a_puerta_total", "Tiros a puerta"] };
+        const fuente = estadisticas[pick.tipo];
+        let total = fuente ? partido.resultado_real[fuente[0]] : null;
+        if (pick.tipo === "goles_over_2_5" && partido.resultado_real.marcador_local != null && partido.resultado_real.marcador_visitante != null) {
+          total = Number(partido.resultado_real.marcador_local) + Number(partido.resultado_real.marcador_visitante);
+        }
+        if (total != null && pick.linea != null) {
+          const avance = document.createElement("p");
+          const minuto = partido.resultado_real.minuto == null ? "" : ` ${partido.resultado_real.minuto}'`;
+          avance.textContent = `EN VIVO${minuto} · ${(fuente && fuente[1]) || "Goles"}: ${total} / ${pick.linea}`;
+          tarjeta.appendChild(avance);
+        }
+      }
+      return tarjeta;
+    }
+
+    function crearPartidoAgrupado(partido) {
+      const tarjeta = document.createElement("details");
+      tarjeta.className = "partido-card";
+      const encabezado = document.createElement("summary");
+      const hora = document.createElement("span");
+      hora.className = "hora-partido";
+      hora.textContent = horaLocalPartido(partido);
+      const nombre = document.createElement("span");
+      nombre.className = "resumen-partido";
+      nombre.textContent = `${partido.local} vs ${partido.visitante}`;
+      const picks = Array.isArray(partido.picks_valor) ? [...partido.picks_valor] : [];
+      const totalValor = picks.filter((pick) => pick.tiene_valor).length;
+      const badge = document.createElement("span");
+      badge.className = "badge-valor";
+      badge.textContent = `${totalValor} ${totalValor === 1 ? "mercado con valor" : "mercados con valor"}`;
+      encabezado.append(hora, nombre, badge);
+      tarjeta.appendChild(encabezado);
+
+      const contenido = document.createElement("div");
+      contenido.className = "detalle-partido";
+      const estado = document.createElement("div");
+      estado.className = "estado-resumen";
+      const estadoTexto = document.createElement("span");
+      estadoTexto.textContent = etiquetaEstadoPartido(partido);
+      const resultado = partido.resultado_real || {};
+      const local = resultado.marcador_local ?? partido.goles_local;
+      const visitante = resultado.marcador_visitante ?? partido.goles_visitante;
+      const marcador = document.createElement("span");
+      marcador.className = "marcador-resumen";
+      marcador.textContent = local == null || visitante == null ? "" : `${local} - ${visitante}`;
+      estado.append(estadoTexto, marcador);
+      contenido.appendChild(estado);
+      picks.sort((a, b) => Number(Boolean(b.tiene_valor)) - Number(Boolean(a.tiene_valor)) || Number(b.edge || 0) - Number(a.edge || 0));
+      picks.forEach((pick) => contenido.appendChild(crearPrediccionMercado(partido, pick)));
+      tarjeta.appendChild(contenido);
+      return tarjeta;
+    }
+
+    async function cargarPartidosPorLiga() {
       if (cargandoListaHoy) return;
       cargandoListaHoy = true;
       listaApuestasHoy.replaceChildren();
-      listaResultadosAyer.replaceChildren();
-
       try {
         const respuesta = await fetch(apiUrl(`/api/partidos?v=${Date.now()}`), { cache: "no-store" });
         const datos = await respuesta.json();
-        if (!respuesta.ok) throw new Error(datos.detail || "No se pudo cargar la lista de partidos.");
-
-        const partidos = Array.isArray(datos.partidos) ? datos.partidos : [];
-        const finalizado = (partido) => partido.es_finalizado === true ||
-          ["FINALIZADO", "FT", "FINISHED", "AET", "PEN"].includes(String(partido.estado || "").toUpperCase());
-        const finales = partidos.filter(finalizado);
-        const activos = partidos.filter((partido) => !finalizado(partido));
-        const picksActivos = activos.flatMap((partido) =>
-          Array.isArray(partido.picks_valor)
-            ? partido.picks_valor.map((pick) => ({ partido, pick }))
-            : []
-        ).sort((a, b) => (Number(b.pick.edge) || -1) - (Number(a.pick.edge) || -1));
-        const cantidadValor = picksActivos.filter(({ pick }) => pick.tiene_valor).length;
-        const hayHistoricos = activos.some(tieneDatosHistoricos);
-        marcarActualizacion(Boolean(datos.error_api) || !activos.some((partido) => partido.datos_en_vivo), hayHistoricos);
-        bannerValor.textContent = `Hoy analizamos ${picksActivos.length} mercados, ${cantidadValor} tienen valor, ${cantidadValor ? "apuesta solo en los verdes" : "no apuestes hoy"}.`;
-
-        if (!picksActivos.length) {
-          const aviso = document.createElement("li");
-          aviso.textContent = activos.length ? "No hay mercados para mostrar." : "No hay partidos activos hoy.";
-          listaApuestasHoy.appendChild(aviso);
-        }
-
-        picksActivos.forEach(({ partido, pick }) => {
-          const item = document.createElement("li");
-          const tarjeta = document.createElement("article");
-          tarjeta.className = pick.tiene_valor ? "pick-valor" : "pick-sin-valor";
-          const titulo = document.createElement("h3");
-          titulo.textContent = pick.tiene_valor
-            ? `🔥 VALOR: ${pick.mercado} en ${partido.local} vs ${partido.visitante}`
-            : `⛔ SIN VALOR - NO APOSTAR: ${pick.mercado} en ${partido.local} vs ${partido.visitante}`;
-          tarjeta.appendChild(titulo);
-
-          const porcentaje = (valor) => valor == null ? "No calculable" : `${Number(valor).toFixed(0)}%`;
-          const edgeTexto = pick.edge_pct == null ? "No calculable" : `${Number(pick.edge_pct) > 0 ? "+" : ""}${Number(pick.edge_pct).toFixed(2)}%`;
-          const probabilidades = document.createElement("p");
-          probabilidades.textContent =
-            `Probabilidad real IA: ${porcentaje(pick.probabilidad_real_pct)} | ` +
-            `La casa paga como: ${porcentaje(pick.probabilidad_implicita_pct)} | Edge: ${edgeTexto}`;
-          tarjeta.appendChild(probabilidades);
-
-          const stake = document.createElement("p");
-          const cuotaEtiqueta = pick.cuota_estimada ? " (estimada)" : "";
-          const stakeTexto = Number(pick.stake_pct).toFixed(2).replace(/\.?0+$/, "");
-          stake.textContent =
-            `Cuota: ${Number(pick.cuota).toFixed(2)}${cuotaEtiqueta} | ` +
-            `Recomendación: ${pick.tiene_valor ? `${stakeTexto}% de tu banca` : "0% de tu banca - NO APOSTAR"} | ` +
-            `Confianza: ${pick.confianza || "Media"}`;
-          tarjeta.appendChild(stake);
-
-          const datosUsados = document.createElement("p");
-          datosUsados.textContent = `Datos usados: ${pick.badge_datos || pick.datos_usados || "Promedio liga"}`;
-          tarjeta.appendChild(datosUsados);
-
-          const motivo = document.createElement("details");
-          motivo.className = "pick-detalle";
-          const motivoTitulo = document.createElement("summary");
-          motivoTitulo.textContent = "Ver por qué";
-          const motivoTexto = document.createElement("p");
-          motivoTexto.textContent = pick.motivo || partido.motivo || "Cálculo basado en los registros históricos disponibles.";
-          motivo.append(motivoTitulo, motivoTexto);
-          tarjeta.appendChild(motivo);
-          item.appendChild(tarjeta);
-          listaApuestasHoy.appendChild(item);
+        if (!respuesta.ok) throw new Error(datos.detail || "No se pudo cargar la lista.");
+        const todos = Array.isArray(datos.partidos) ? datos.partidos : [];
+        const hoy = hoyLocal();
+        const partidos = todos.filter((partido) => fechaLocalPartido(partido) === hoy || (!partido.fecha && !esPartidoFinal(partido)));
+        const totalMercados = partidos.reduce((suma, p) => suma + (Array.isArray(p.picks_valor) ? p.picks_valor.length : 0), 0);
+        const picksVerdes = partidos.reduce((suma, p) => suma + (p.picks_valor || []).filter((pick) => pick.tiene_valor).length, 0);
+        const partidosConValor = partidos.filter((p) => (p.picks_valor || []).some((pick) => pick.tiene_valor)).length;
+        bannerValor.textContent = `${partidos.length} partidos hoy · ${partidosConValor} partidos con valor · ${picksVerdes} de ${totalMercados} mercados recomendados`;
+        const grupos = new Map();
+        partidos.forEach((partido) => {
+          const liga = nombreLigaVisible(partido);
+          if (!grupos.has(liga)) grupos.set(liga, []);
+          grupos.get(liga).push(partido);
         });
-
-        if (finales.length) {
-          seccionResultadosAyer.hidden = false;
-          finales.forEach((partido) => {
-            const item = document.createElement("li");
-            const tarjeta = document.createElement("article");
-            tarjeta.className = "resultado-finalizado";
-            const titulo = document.createElement("h3");
-            titulo.textContent = `${partido.local} vs ${partido.visitante} · Finalizado${partido.marcador_final ? ` · ${partido.marcador_final}` : ""}`;
-            tarjeta.appendChild(titulo);
-
-            const picks = Array.isArray(partido.picks_valor) ? partido.picks_valor : [];
-            if (!picks.length && partido.resultado_prediccion) {
-              const resultadoPick = document.createElement("p");
-              const nombrePick = partido.prediccion || (partido.prediccion_ia && partido.prediccion_ia.mejor_apuesta) || "Pronóstico";
-              const estadoPrediccion = partido.resultado_prediccion;
-              const iconoPrediccion = estadoPrediccion === "GANADO" ? "✅" : estadoPrediccion === "PERDIDO" ? "❌" : "⏳";
-              resultadoPick.textContent = `${iconoPrediccion} ${nombrePick}: ${estadoPrediccion}`;
-              tarjeta.appendChild(resultadoPick);
-            }
-            picks.forEach((pick) => {
-              const resultadoPick = document.createElement("p");
-              const estadoPick = pick.resultado_pick || "Liquidado con estimación de liga";
-              const icono = estadoPick === "GANADO" ? "✅" : estadoPick === "PERDIDO" ? "❌" : "⏳";
-              const total = pick.total_real != null ? pick.total_real : pick.total_estimado;
-              const valorTotal = total == null ? "" : ` · ${pick.resultado_fuente || "Estimado"}: ${Number(total).toFixed(1)}`;
-              const linea = pick.linea == null ? "" : ` · Línea ${pick.linea}`;
-              const nota = pick.resultado_nota ? ` · ${pick.resultado_nota}` : "";
-              resultadoPick.textContent = `${icono} ${pick.mercado}${valorTotal}${linea} = ${estadoPick}${nota}`;
-              tarjeta.appendChild(resultadoPick);
-              const calidad = document.createElement("p");
-              calidad.textContent = `Datos usados: ${pick.badge_datos || pick.datos_usados || "Promedio liga"} · Confianza: ${pick.confianza || "Baja"}`;
-              tarjeta.appendChild(calidad);
-            });
-            if (!picks.length && !partido.resultado_prediccion) {
-              const pendiente = document.createElement("p");
-              pendiente.textContent = "Sin picks de valor para liquidar.";
-              tarjeta.appendChild(pendiente);
-            }
-            item.appendChild(tarjeta);
-            listaResultadosAyer.appendChild(item);
-          });
-        } else {
-          seccionResultadosAyer.hidden = true;
+        const ligas = [...grupos.entries()].sort(([a], [b]) => a.localeCompare(b, "es", { sensitivity: "base" }));
+        ligas.forEach(([liga, juegos], indice) => {
+          juegos.sort((a, b) => new Date(a.fecha || 0) - new Date(b.fecha || 0));
+          const conValor = juegos.filter((juego) => (juego.picks_valor || []).some((pick) => pick.tiene_valor)).length;
+          const mercadosValor = juegos.reduce((suma, juego) => suma + (juego.picks_valor || []).filter((pick) => pick.tiene_valor).length, 0);
+          const grupo = document.createElement("details");
+          grupo.className = "liga-grupo";
+          if (indice === 0) grupo.open = true;
+          const resumen = document.createElement("summary");
+          resumen.textContent = `${liga} · ${juegos.length} ${juegos.length === 1 ? "partido" : "partidos"} · ${conValor} con oportunidad (${mercadosValor} mercados)`;
+          grupo.appendChild(resumen);
+          const contenido = document.createElement("div");
+          contenido.className = "liga-contenido";
+          juegos.forEach((partido) => contenido.appendChild(crearPartidoAgrupado(partido)));
+          grupo.appendChild(contenido);
+          listaApuestasHoy.appendChild(grupo);
+        });
+        if (!partidos.length) {
+          const vacio = document.createElement("li");
+          vacio.textContent = "No hay partidos programados para hoy.";
+          listaApuestasHoy.appendChild(vacio);
         }
       } catch (error) {
-        console.error("Error al cargar Lista de Hoy:", error);
-        marcarActualizacion(true);
-        bannerValor.textContent = "No se pudieron cargar los picks de valor.";
+        console.error("Error al cargar partidos:", error);
+        bannerValor.textContent = "No se pudo actualizar la lista de partidos.";
         const aviso = document.createElement("li");
-        aviso.textContent = "No se pudo mostrar la lista. Intenta de nuevo en unos minutos.";
+        aviso.textContent = "Intenta actualizar en unos minutos.";
         listaApuestasHoy.appendChild(aviso);
       } finally {
         cargandoListaHoy = false;
+      }
+    }
+
+    async function cargarHistorico() {
+      listaHistorico.replaceChildren();
+      try {
+        const respuesta = await fetch(apiUrl(`/api/historico?v=${Date.now()}`), { cache: "no-store" });
+        const datos = await respuesta.json();
+        if (!respuesta.ok) throw new Error("No se pudo cargar el histórico.");
+        const partidos = Array.isArray(datos.partidos) ? datos.partidos : [];
+        const resumen = datos.resumen || {};
+        const acierto = resumen.porcentaje_acierto == null ? "—" : `${resumen.porcentaje_acierto}%`;
+        resumenHistorico.textContent = `Resultados confirmados: ${resumen.ganados || 0} ganados · ${resumen.perdidos || 0} perdidos · ${acierto} de acierto. ${resumen.picks_estimados || 0} veredictos provisionales.`;
+        if (!partidos.length) {
+          const vacio = document.createElement("li");
+          vacio.textContent = "Los partidos y sus resultados aparecerán aquí al finalizar.";
+          listaHistorico.appendChild(vacio);
+          return;
+        }
+        let diaActual = "";
+        partidos.forEach((partido) => {
+          const dia = partido.fecha_local || fechaLocalPartido(partido) || "Fecha por confirmar";
+          if (dia !== diaActual) {
+            diaActual = dia;
+            const fecha = document.createElement("li");
+            fecha.className = "historico-dia";
+            fecha.textContent = new Intl.DateTimeFormat("es-CO", { dateStyle: "long", timeZone: "America/Bogota" }).format(new Date(`${dia}T12:00:00-05:00`));
+            listaHistorico.appendChild(fecha);
+          }
+          const elemento = document.createElement("li");
+          const tarjeta = document.createElement("article");
+          tarjeta.className = "partido-historico";
+          const titulo = document.createElement("h3");
+          titulo.textContent = `${partido.local} vs ${partido.visitante} · ${partido.marcador_final || "Finalizado"} · ${nombreLigaVisible(partido)}`;
+          tarjeta.appendChild(titulo);
+          (partido.picks_valor || []).forEach((pick) => {
+            const linea = document.createElement("p");
+            const simbolo = pick.resultado_pick === "GANADO" ? "✅" : pick.resultado_pick === "PERDIDO" ? "❌" : "—";
+            linea.textContent = `${simbolo} ${pick.mercado}: ${pick.resultado_pick || "Sin veredicto"}${pick.resultado_estimado ? " · Resultado provisional" : ""}`;
+            tarjeta.appendChild(linea);
+          });
+          elemento.appendChild(tarjeta);
+          listaHistorico.appendChild(elemento);
+        });
+      } catch (error) {
+        console.error("Error al cargar histórico:", error);
+        resumenHistorico.textContent = "No se pudo cargar el registro histórico.";
       }
     }
 
@@ -741,6 +623,7 @@
       pestana.addEventListener("click", async () => {
         if (pestana.dataset.vista === "hoy") {
           document.querySelector("#vista_hoy").hidden = false;
+          document.querySelector("#vista_historico").hidden = true;
           document.querySelector("#vista_completa").hidden = true;
           document.querySelector("#vista_individual").hidden = true;
           await cargarListaHoy();
@@ -749,8 +632,20 @@
             otraPestana.classList.toggle("activa", activa);
             otraPestana.setAttribute("aria-selected", String(activa));
           });
+        } else if (pestana.dataset.vista === "historico") {
+          document.querySelector("#vista_hoy").hidden = true;
+          document.querySelector("#vista_historico").hidden = false;
+          document.querySelector("#vista_completa").hidden = true;
+          document.querySelector("#vista_individual").hidden = true;
+          await cargarHistorico();
+          document.querySelectorAll(".pestana").forEach((otraPestana) => {
+            const activa = otraPestana === pestana;
+            otraPestana.classList.toggle("activa", activa);
+            otraPestana.setAttribute("aria-selected", String(activa));
+          });
         } else if (pestana.dataset.vista === "completo") {
           document.querySelector("#vista_hoy").hidden = true;
+          document.querySelector("#vista_historico").hidden = true;
           document.querySelector("#vista_completa").hidden = false;
           document.querySelector("#vista_individual").hidden = true;
           document.querySelectorAll(".pestana").forEach((otraPestana) => {
@@ -770,9 +665,12 @@
     function iniciarActualizacionListaHoy() {
       if (intervaloListaHoy !== null) return;
       intervaloListaHoy = window.setInterval(() => {
-        const vistaHoyActiva = !document.querySelector("#vista_hoy").hidden;
-        if (!document.hidden && vistaHoyActiva && !cargandoListaHoy) cargarListaHoy();
-      }, 2700000);
+        if (!document.hidden && !cargandoListaHoy) {
+          cargarListaHoy().then(() => {
+            if (!document.querySelector("#vista_historico").hidden) cargarHistorico();
+          });
+        }
+      }, 300000);
     }
 
     function detenerActualizacionListaHoy() {
@@ -786,6 +684,7 @@
     window.addEventListener("pageshow", iniciarActualizacionListaHoy);
     iniciarActualizacionListaHoy();
     cargarListaHoy();
+    botonActualizarLista.addEventListener("click", cargarListaHoy);
 
     formularioCompleto.addEventListener("submit", async (evento) => {
       evento.preventDefault();
@@ -795,7 +694,6 @@
       botonCompleto.disabled = true;
 
       const datos = Object.fromEntries(new FormData(formularioCompleto));
-      const banco = Number(datos.banco);
       const equipoLocal = datos.equipo_local;
       const equipoVisitante = datos.equipo_visitante;
 
@@ -814,57 +712,33 @@
             throw new Error(`${mercado.nombre}: ${analisis.detail || "falló el análisis."}`);
           }
 
-          const respuestaKelly = await fetch(apiUrl("/calcular-kelly"), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              probabilidad: analisis.probabilidad,
-              cuota: analisis.cuota,
-              banco,
-              recomendacion: analisis.recomendacion,
-            }),
-          });
-          const kelly = await respuestaKelly.json();
-          if (!respuestaKelly.ok) {
-            throw new Error(`${mercado.nombre}: ${kelly.detail || "falló el cálculo Kelly."}`);
-          }
-          return { mercado, analisis, kelly };
+          return { mercado, analisis };
         }));
 
         const apuestas = resultados.filter(({ analisis }) => analisis.recomendacion !== "NO HAY VALOR").length;
-        const filas = resultados.map(({ mercado, analisis, kelly }) => {
+        const filas = resultados.map(({ mercado, analisis }) => {
+          const mercadoProbabilidad = 1 / analisis.cuota;
+          const edge = (analisis.probabilidad - mercadoProbabilidad) * 100;
           if (analisis.recomendacion === "NO HAY VALOR") {
             return `
               <article class="fila-resultado fila-no-apuesta">
                 <strong>${mercado.nombre}</strong><br>
-                ❌ NO APUSTES<br>
-                Valor: ${analisis.valor.toFixed(2)}%
+                ⛔ NO APOSTAR<br>
+                Probabilidad: ${(analisis.probabilidad * 100).toFixed(1)}% · Mercado: ${(mercadoProbabilidad * 100).toFixed(1)}% · Edge: ${edge >= 0 ? "+" : ""}${edge.toFixed(1)}%
               </article>
             `;
           }
           return `
             <article class="fila-resultado fila-apuesta">
               <strong>${mercado.nombre} · ${mercado.opcion}</strong><br>
-              ✅ APUESTA<br>
-              Valor: ${analisis.valor.toFixed(2)}% · Probabilidad: ${(analisis.probabilidad * 100).toFixed(2)}%<br>
-              Stake Kelly (¼): $${kelly.stake_recomendado.toFixed(2)} · Porcentaje del banco: ${kelly.porcentaje_banco.toFixed(2)}%
-              <div class="como-apostar">
-                <strong>👉 CÓMO APOSTAR ESTO:</strong>
-                <ol>
-                  <li>Abre tu casa de apuestas de preferencia</li>
-                  <li>Busca el partido: ${escaparHtml(equipoLocal)} vs ${escaparHtml(equipoVisitante)}</li>
-                  <li>Busca el mercado: ${mercado.nombre}</li>
-                  <li>Elige la opción: ${mercado.opcion}</li>
-                  <li>Apuesta: $${kelly.stake_recomendado.toFixed(2)}</li>
-                  <li>Tú pusiste cuota ${analisis.cuota.toFixed(2)}. Antes de apostar, verifica que la cuota siga igual en tu casa de apuestas de preferencia, porque la cuota cambia en vivo.</li>
-                </ol>
-              </div>
+              ✅ APOSTAR<br>
+              Probabilidad: ${(analisis.probabilidad * 100).toFixed(1)}% · Mercado: ${(mercadoProbabilidad * 100).toFixed(1)}% · Edge: +${edge.toFixed(1)}%
             </article>
           `;
         }).join("");
         const resumen = apuestas === 0
-          ? "Hoy NO hay valor, no apuestes"
-          : `Hoy hay ${apuestas} ${apuestas === 1 ? "apuesta" : "apuestas"} de valor de 4 mercados`;
+          ? "No hay señales de valor en este partido."
+          : `${apuestas} de 4 mercados muestran valor.`;
 
         resultadoCompleto.innerHTML = `
           <h2 id="resumen_partido"></h2>
@@ -890,8 +764,6 @@
 
       const datos = Object.fromEntries(new FormData(formulario));
       for (const campo of Object.keys(datos)) datos[campo] = Number(datos[campo]);
-      const banco = datos.banco;
-      delete datos.banco;
 
       try {
         const respuesta = await fetch(apiUrl(`/analizar-${mercados[mercadoActivo].endpoint}`), {
@@ -904,32 +776,18 @@
           throw new Error(analisis.detail || "No se pudo completar el análisis.");
         }
 
-        const respuestaKelly = await fetch(apiUrl("/calcular-kelly"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            probabilidad: analisis.probabilidad,
-            cuota: analisis.cuota,
-            banco,
-            recomendacion: analisis.recomendacion,
-          }),
-        });
-        const kelly = await respuestaKelly.json();
-        if (!respuestaKelly.ok) {
-          throw new Error(kelly.detail || "No se pudo calcular el stake Kelly.");
-        }
-
         const probabilidad = (analisis.probabilidad * 100).toFixed(2);
         const recomendacion = analisis.recomendacion;
+        const implicita = 1 / analisis.cuota;
+        const edge = (analisis.probabilidad - implicita) * 100;
         resultado.innerHTML = `
           <div class="metricas">
             <div><strong>Probabilidad:</strong> ${probabilidad}%</div>
-            <div><strong>Valor:</strong> ${analisis.valor.toFixed(2)}%</div>
-            <div><strong>Stake Kelly (¼):</strong> $${kelly.stake_recomendado.toFixed(2)}</div>
-            <div><strong>Porcentaje del banco:</strong> ${kelly.porcentaje_banco.toFixed(2)}%</div>
+            <div><strong>Mercado:</strong> ${(implicita * 100).toFixed(2)}%</div>
+            <div><strong>Edge:</strong> ${edge >= 0 ? "+" : ""}${edge.toFixed(2)}%</div>
           </div>
           <p class="recomendacion ${recomendacion === "NO HAY VALOR" ? "sin-valor" : "con-valor"}">
-            ${recomendacion}
+            ${recomendacion === "NO HAY VALOR" ? "⛔ NO APOSTAR" : "✅ APOSTAR"}
           </p>
         `;
       } catch (error) {
