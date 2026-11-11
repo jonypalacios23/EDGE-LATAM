@@ -216,22 +216,32 @@ def obtener_resultados_partidos(partidos: Sequence[Dict[str, object]]) -> List[D
     requests_cache: Dict[tuple, List[object]] = {}
     for partido in partidos:
         fecha = str(partido.get("fecha", "")).split("T", 1)[0]
+        season = partido.get("season")
+        if season is None:
+            season = fecha[:4] if len(fecha) >= 4 else None
         local_id = partido.get("local_id")
         visitante_id = partido.get("visitante_id")
-        if not fecha or local_id is None or visitante_id is None:
+        if not fecha or season is None or local_id is None or visitante_id is None:
             continue
         try:
             date.fromisoformat(fecha)
-        except ValueError:
+        except (TypeError, ValueError):
             print("Fecha de partido inválida para API-Football: {!r}".format(fecha))
+            continue
+        try:
+            season = int(season)
+        except (TypeError, ValueError):
+            print("Temporada inválida para API-Football: {!r}".format(season))
             continue
         requested_ids = {str(local_id), str(visitante_id)}
         fixture_rows = []
         for team_id in requested_ids:
-            cache_key = (team_id, fecha)
+            cache_key = (team_id, fecha, season)
             if cache_key not in requests_cache:
                 try:
-                    payload = _get_json("fixtures", {"team": team_id, "date": fecha})
+                    payload = _get_json(
+                        "fixtures", {"team": team_id, "date": fecha, "season": season}
+                    )
                     response = payload.get("response", [])
                     requests_cache[cache_key] = response if isinstance(response, list) else []
                 except Exception as error:
@@ -261,6 +271,24 @@ def obtener_resultados_partidos(partidos: Sequence[Dict[str, object]]) -> List[D
                 seen_rows.add(fixture_id)
                 fixture_ids.add(fixture_id)
     return results
+
+
+def obtener_resultado_por_fixture_id(fixture_id: object) -> Optional[Dict[str, object]]:
+    """Refresh one fixture by its stable API ID, independent of date/team matching."""
+    try:
+        fixture_id_int = int(fixture_id)
+    except (TypeError, ValueError):
+        return None
+    payload = _get_json("fixtures", {"id": fixture_id_int})
+    response = payload.get("response", [])
+    for row in response if isinstance(response, list) else []:
+        if not isinstance(row, dict):
+            continue
+        fixture = row.get("fixture", {})
+        if not isinstance(fixture, dict) or str(fixture.get("id")) != str(fixture_id_int):
+            continue
+        return _fixture_to_result(row)
+    return None
 
 
 def buscar_resultado_por_ids(

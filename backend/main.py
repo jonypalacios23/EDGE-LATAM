@@ -13,7 +13,11 @@ from pydantic import BaseModel, Field
 
 if __package__:
     from .calibracion import metricas_calibracion
-    from .api_football import buscar_resultado_por_ids, obtener_resultados_partidos
+    from .api_football import (
+        buscar_resultado_por_ids,
+        obtener_resultado_por_fixture_id,
+        obtener_resultados_partidos,
+    )
     from .cartelera import obtener_cartelera_diaria
     from .historico_storage import read_history, write_history
     from .corners import analizar_corners
@@ -24,7 +28,11 @@ if __package__:
     from .valor import liquidar_picks_finalizados, seleccionar_picks_dia
 else:
     from calibracion import metricas_calibracion
-    from api_football import buscar_resultado_por_ids, obtener_resultados_partidos
+    from api_football import (
+        buscar_resultado_por_ids,
+        obtener_resultado_por_fixture_id,
+        obtener_resultados_partidos,
+    )
     from cartelera import obtener_cartelera_diaria
     from historico_storage import read_history, write_history
     from corners import analizar_corners
@@ -352,6 +360,107 @@ def obtener_partidos_api() -> Dict[str, object]:
                 resultado = buscar_resultado_por_ids(
                     partido.get("local_id"), partido.get("visitante_id"), resultados_api,
                 )
+            # The date scoreboard can lag behind a fixture in another
+            # competition. Revalidate by ID when it is live, or when today's
+            # kickoff has passed but the date feed still says it is pending.
+            resultado_corto = str((resultado or {}).get("estado_corto", "")).upper()
+            try:
+                fecha_inicio = datetime.fromisoformat(
+                    str(partido.get("fecha", "")).replace("Z", "+00:00")
+                )
+                if fecha_inicio.tzinfo is None:
+                    fecha_inicio = fecha_inicio.replace(tzinfo=ZoneInfo("UTC"))
+                minutos_desde_inicio = (
+                    datetime.now(ZoneInfo("UTC")) - fecha_inicio
+                ).total_seconds() / 60.0
+                inicio_ya_paso = (
+                    fecha_inicio <= datetime.now(ZoneInfo("UTC"))
+                    and _fecha_local_partido(partido) == hoy.isoformat()
+                )
+            except ValueError:
+                inicio_ya_paso = False
+                minutos_desde_inicio = None
+            estados_terminales = {"FT", "AET", "PEN", "CANC", "PST", "ABD", "AWD", "WO"}
+            debe_revalidar = (
+                resultado_corto in {"1H", "HT", "2H", "ET", "BT", "P", "LIVE"}
+                or (inicio_ya_paso and resultado_corto not in estados_terminales)
+            )
+            if debe_revalidar:
+                try:
+                    resultado_actualizado = obtener_resultado_por_fixture_id(partido.get("fixture_id"))
+                    if resultado_actualizado is not None:
+                        resultado = resultado_actualizado
+                        print(
+                            "API-Football fixture refresh id={} status={} elapsed={}".format(
+                                partido.get("fixture_id"),
+                                resultado.get("estado_corto"),
+                                resultado.get("minuto"),
+                            )
+                        )
+                    else:
+                        print(
+                            "API-Football fixture refresh id={} sin respuesta; se conserva el estado anterior".format(
+                                partido.get("fixture_id")
+                            )
+                        )
+                except Exception as error:
+                    print(
+                        "Error revalidando fixture {} por ID: {}".format(
+                            partido.get("fixture_id"), error
+                        )
+                    )
+            # Some competitions can return a frozen live minute by fixture ID.
+            # If the reported live state is over 150 minutes past kickoff,
+            # cross-check the same fixture through both team/date endpoints;
+            # these requests include the required season parameter.
+            if (
+                str((resultado or {}).get("estado_corto", "")).upper()
+                in {"1H", "HT", "2H", "ET", "BT", "P", "LIVE"}
+                and minutos_desde_inicio is not None
+                and minutos_desde_inicio >= 150
+            ):
+                try:
+                    resultados_por_equipo = obtener_resultados_partidos([partido])
+                    resultado_por_equipo = buscar_resultado_por_ids(
+                        partido.get("local_id"), partido.get("visitante_id"), resultados_por_equipo,
+                    )
+                    estado_equipo = str(
+                        (resultado_por_equipo or {}).get("estado_corto", "")
+                    ).upper()
+                    if estado_equipo in estados_terminales:
+                        resultado = resultado_por_equipo
+                    print(
+                        "API-Football team/date cross-check fixture={} status={}".format(
+                            partido.get("fixture_id"), estado_equipo or "sin coincidencia"
+                        )
+                    )
+                except Exception as error:
+                    print(
+                        "Error API-Football team/date cross-check fixture={}: {}".format(
+                            partido.get("fixture_id"), error
+                        )
+                    )
+                estado_final_cruzado = str(
+                    (resultado or {}).get("estado_corto", "")
+                ).upper() in {"FT", "AET", "PEN"}
+                if not estado_final_cruzado:
+                    # Never present a frozen live clock as current. Keep the
+                    # market unsettled until API-Football supplies a terminal
+                    # status and official statistics.
+                    resultado = dict(resultado or {})
+                    resultado["estado_original_api"] = resultado.get("estado_corto")
+                    resultado["estado"] = "pendiente"
+                    resultado["estado_corto"] = "TBD"
+                    resultado["estado_texto"] = "Esperando confirmación de API-Football"
+                    resultado["minuto"] = None
+                    resultado["marcador_local"] = None
+                    resultado["marcador_visitante"] = None
+                    resultado["estado_atrasado"] = True
+                    print(
+                        "API-Football estado atrasado fixture={}; no se muestra como EN VIVO".format(
+                            partido.get("fixture_id")
+                        )
+                    )
             partido["resultado_real"] = resultado
             if resultado is not None:
                 partido["datos_en_vivo"] = True

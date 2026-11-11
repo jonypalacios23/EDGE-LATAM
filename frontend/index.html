@@ -435,9 +435,11 @@
 
     function etiquetaEstadoPartido(partido) {
       const resultado = partido.resultado_real || {};
+      // The fixture can have an old live label cached while the API refresh
+      // already marked the match final. The match-level final flag wins.
+      if (esPartidoFinal(partido)) return "Finalizado";
       if (resultado.estado_texto) return resultado.estado_texto;
       const estado = String(resultado.estado_corto || partido.estado || "").toUpperCase();
-      if (esPartidoFinal(partido)) return "Finalizado";
       if (estado === "HT") return "Descanso";
       if (["1H", "2H", "ET", "P", "LIVE"].includes(estado)) return `En juego${resultado.minuto == null ? "" : ` · ${resultado.minuto}'`}`;
       return "Programado";
